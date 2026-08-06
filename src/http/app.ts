@@ -7,6 +7,7 @@ import { errorHandler } from "./middleware/errorHandler.js";
 import { healthRouter } from "./routes/health.routes.js";
 import { parcelsRouter } from "./routes/parcels.routes.js";
 import { documentsRouter } from "./routes/documents.routes.js";
+import { verifyRouter } from "./routes/verify.routes.js";
 import { buildOpenApiDocument } from "./openapi/document.js";
 
 export function buildApp() {
@@ -35,6 +36,7 @@ export function buildApp() {
   // unauthenticated per the brief — see README.
   app.use("/api/v1", parcelsRouter);
   app.use("/api/v1", documentsRouter);
+  app.use("/api/v1", verifyRouter);
 
   app.use(errorHandler);
 

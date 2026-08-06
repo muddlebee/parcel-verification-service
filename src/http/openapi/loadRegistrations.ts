@@ -7,6 +7,8 @@ import "../schemas/common.schemas.js";
 import "../schemas/parcel.schemas.js";
 import "../schemas/transition.schemas.js";
 import "../schemas/callback.schemas.js";
+import "../schemas/registry.schemas.js";
 import "../routes/health.routes.js";
 import "../routes/parcels.routes.js";
 import "../routes/documents.routes.js";
+import "../routes/verify.routes.js";

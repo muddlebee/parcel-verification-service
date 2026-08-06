@@ -38,6 +38,7 @@ services:
       UPLOAD_DIR: /app/uploads
       REGISTRY_RETRY_BASE_MS: 2000
       REGISTRY_MAX_ATTEMPTS: 5
+      REGISTRY_CALL_TIMEOUT_MS: 3000
     volumes:
       - uploads_data:/app/uploads
     depends_on:

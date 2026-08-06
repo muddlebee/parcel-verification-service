@@ -10,6 +10,11 @@ const EnvSchema = z.object({
   UPLOAD_DIR: z.string().default("./uploads"),
   REGISTRY_RETRY_BASE_MS: z.coerce.number().int().positive().default(30_000),
   REGISTRY_MAX_ATTEMPTS: z.coerce.number().int().positive().default(5),
+  // How long we wait for the (stubbed) partner to acknowledge before
+  // treating the call as timed out. Real partner: tens of seconds.
+  // Scaled way down here so a reviewer sees a timeout/retry cycle in
+  // seconds, not minutes.
+  REGISTRY_CALL_TIMEOUT_MS: z.coerce.number().int().positive().default(3_000),
 });
 
 const parsed = EnvSchema.safeParse(process.env);
