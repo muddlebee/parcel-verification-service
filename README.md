@@ -1,12 +1,11 @@
 # Parcel Verification Service
 
-BhoomiPe's Parcel Verification Service — accepts a land parcel for verification,
-moves it through a multi-stage pipeline involving an external land-registry
-partner, and keeps a defensible record of every state change.
+A parcel verification service — accepts a land parcel for verification, moves
+it through a multi-stage pipeline involving an external land-registry partner,
+and keeps a defensible record of every state change.
 
-Built for the BhoomiPe Backend Engineer take-home assignment. See
-[`docs/architecture.md`](docs/architecture.md) for diagrams (system overview,
-ERD, state machine, sequence flow) and
+See [`docs/architecture.md`](docs/architecture.md) for diagrams (system
+overview, ERD, state machine, sequence flow) and
 [`docs/IMPLEMENTATION_LOG.md`](docs/IMPLEMENTATION_LOG.md) for a chronological,
 commit-by-commit build narrative including the bugs found and fixed along the
 way.
@@ -38,7 +37,8 @@ curl http://localhost:3000/healthz
 # the handlers validate against — can't drift)
 open http://localhost:3000/docs
 
-# every authenticated route needs this header (static key, per the brief)
+# every authenticated route needs this header (static key — see design
+# decisions below for why)
 # default in docker-compose.yml is dev-local-api-key
 curl -H "X-API-Key: dev-local-api-key" http://localhost:3000/api/v1/parcels
 ```
@@ -92,21 +92,21 @@ starting with it.
   aren't editable through a generic update endpoint. This data anchors a title
   chain — silently rewriting it outside the audit trail is exactly the kind of
   thing this service exists to prevent. A real correction workflow would need
-  its own audited process, which wasn't asked for here.
+  its own audited process, which isn't built here.
 - **No `DELETE /parcels/:id`, no "unsubmit."** The state machine has no path
   back to a prior state for a reason — this is meant to be a defensible record,
   and hard deletion contradicts that on its face.
-- **No document-download endpoint.** The brief asks for attaching documents,
+- **No document-download endpoint.** The scope here is attaching documents,
   not serving them back. Building a download route opens its own security
-  surface (content-type sniffing, path handling) that wasn't asked for; ops has
-  direct volume access to `./uploads` for now.
+  surface (content-type sniffing, path handling) that's a separate concern;
+  ops has direct volume access to `./uploads` for now.
 - **No raw admin override for a stuck `registry_sync_status`.** An operator
   should re-trigger through a domain-meaningful action, not be handed a field
   editor. (I'd add a dedicated `POST /parcels/:id/retry-verification` endpoint
   for this with another week — see §4.)
-- **No bulk endpoints.** Not asked for, and bulk state-changing operations need
-  their own per-item audit semantics — real complexity with no signal it was
-  wanted.
+- **No bulk endpoints.** Not needed for this scope, and bulk state-changing
+  operations need their own per-item audit semantics — real complexity with
+  no signal it was wanted.
 
 ## 3. Design decisions
 
@@ -119,7 +119,7 @@ Five tables, shipped as versioned `node-pg-migrate` migrations
 idempotency ledger). Full reasoning and the ERD are in
 [`docs/architecture.md`](docs/architecture.md).
 
-`parcels` carries two independent status fields: `status` (the brief's 5-state
+`parcels` carries two independent status fields: `status` (the 5-state
 machine) and `registry_sync_status` (`idle → queued → retrying → exhausted/done`).
 The latter tracks the outbound partner call without inventing a 6th business
 state — a stuck call is operator-visible through this field while the parcel
@@ -135,15 +135,15 @@ generated files that are harder to review as a diff.
 
 ### Why there's a separate `/verify` endpoint, not an automatic trigger on submission
 
-The brief's integration section says "submitting a parcel triggers an
+The integration requirement says "submitting a parcel triggers an
 asynchronous call to a partner." Read literally, that could mean `POST
 /parcels` itself should fire the registry call. I didn't build it that way —
-the state machine the brief also specifies has `documents_pending` as its own
-real state between `submitted` and `under_verification`, and "attaching
-documents" is a first-class capability, which only makes sense if there's a
-window where documents get attached *before* verification starts. Firing the
-registry call the instant a parcel is created, before any document exists to
-verify against, would make that state and that capability pointless.
+the state machine also specifies `documents_pending` as its own real state
+between `submitted` and `under_verification`, and "attaching documents" is a
+first-class capability, which only makes sense if there's a window where
+documents get attached *before* verification starts. Firing the registry call
+the instant a parcel is created, before any document exists to verify against,
+would make that state and that capability pointless.
 
 So `POST /parcels/:id/verify` is the explicit, ops/caller-triggered action that
 moves `documents_pending → under_verification` and enqueues the call — read
@@ -156,24 +156,24 @@ retry-with-backoff cycle.
 
 ### The state-machine ambiguity I resolved
 
-The brief's own diagram is ambiguous about whether `rejected`/`disputed` branch
-directly off `under_verification`, or only `disputed` branches off `verified`.
-I resolved it as: `submitted → documents_pending → under_verification`, which
-then splits to either `verified` or `rejected`; `verified` and `disputed` form
-a reversible pair on their own (see the state diagram in
-[`docs/architecture.md`](docs/architecture.md#state-machine) for the full
-picture).
+The original state diagram is ambiguous about whether `rejected`/`disputed`
+branch directly off `under_verification`, or only `disputed` branches off
+`verified`. I resolved it as: `submitted → documents_pending →
+under_verification`, which then splits to either `verified` or `rejected`;
+`verified` and `disputed` form a reversible pair on their own (see the state
+diagram in [`docs/architecture.md`](docs/architecture.md#state-machine) for
+the full picture).
 
 `disputed` is only reachable from `verified` (a competing claim surfacing
 *after* a parcel is already verified), never directly from `under_verification`.
-`rejected` is terminal — the brief describes no path back. This is enforced
+`rejected` is terminal — nothing describes a path back. This is enforced
 server-side by `src/domain/stateMachine.ts`, unit-tested exhaustively over all
 36 `(from, to)` state pairs, not just the happy-path list.
 
-Per the brief's own framing ("asking a sharp question counts in your favour"),
-I'd genuinely have preferred to confirm this with a PM rather than assume it —
-documented the assumption instead of blocking on an email round trip, given the
-24-hour window.
+I'd genuinely have preferred to confirm this interpretation directly rather
+than assume it — documented the assumption instead of blocking on a round
+trip, given the time constraints, and this is exactly the kind of thing worth
+double-checking in a follow-up conversation.
 
 ### Idempotency
 
@@ -198,19 +198,19 @@ BullMQ on Redis. `attempts` + exponential `backoff` configured at enqueue time
 (`src/http/routes/verify.routes.ts`), scaled down via env vars
 (`REGISTRY_RETRY_BASE_MS`, `REGISTRY_MAX_ATTEMPTS`, `REGISTRY_CALL_TIMEOUT_MS`)
 so a reviewer sees a full retry-to-exhaustion cycle in under a minute instead of
-the brief's realistic 5–30s-per-call timing. On final failure,
-`registry_sync_status` flips to `exhausted` — the operator-actionable signal the
-brief asks for, surfaced on `GET /parcels/:id` without polling logs.
+a realistic 5–30s-per-call timing. On final failure, `registry_sync_status`
+flips to `exhausted` — an operator-actionable signal surfaced on
+`GET /parcels/:id` without polling logs.
 
-**This is the one sentence justifying Redis in the stack**, per the brief's own
-requirement to justify it: BullMQ backs the outbound-call retry queue, which is
-something Redis is genuinely the right tool for — delayed jobs, atomic
-attempt-counting, a real dead-letter state — not something added to check a box.
+**This is the one-sentence justification for Redis in the stack:** BullMQ backs
+the outbound-call retry queue, which is something Redis is genuinely the right
+tool for — delayed jobs, atomic attempt-counting, a real dead-letter state —
+not something added to check a box.
 
 **Tradeoff rejected:** a simple setTimeout-based retry loop in the request
 handler. Rejected because it doesn't survive a process restart mid-retry, and
-the brief explicitly requires "a partner outage must not corrupt parcel state
-or lose a submission" — a durable queue is the only way that claim holds.
+"a partner outage must not corrupt parcel state or lose a submission" only
+holds with a durable queue.
 
 ### The stub partner, and why it's designed the way it is
 
@@ -229,17 +229,16 @@ exercised by real traffic — including the deliberate double-delivery for the
 `scenario` is an explicit, documented debug-only field on the verify request —
 not something a real partner's API would expose. It's the honest way to
 demonstrate success/failure/timeout/duplicate deterministically without access
-to a real partner, which is exactly what the brief asks the stub design to
-solve for. Flagged again in §6 as something to strip before this ever fronted a
-real integration.
+to a real partner. Flagged again in §6 as something to strip before this ever
+fronted a real integration.
 
 ## 4. What I'd do with another week
 
 - **Split the workers into their own process/container.** Both are already
   standalone `BullMQ.Worker` instances (`src/jobs/`) — running them in-process
-  with the API was the simplest thing that satisfies "no Kubernetes" and the
-  time budget, but it's a one-file entrypoint change to split them, not a
-  redesign.
+  with the API was the simplest thing that avoids container-orchestration
+  complexity given the scope, but it's a one-file entrypoint change to split
+  them, not a redesign.
 - **A reconciliation sweep.** A periodic job requeuing parcels that have sat in
   `under_verification` with `registry_sync_status` stuck at something other
   than `done`/`exhausted` for too long (e.g. the process crashed mid-job before
@@ -247,8 +246,8 @@ real integration.
 - **A dedicated `POST /parcels/:id/retry-verification`** so ops can re-trigger a
   parcel that hit `exhausted`, instead of it being a dead end.
 - **Filter `GET /parcels` by `registry_sync_status`.** Right now "show me every
-  stuck parcel" requires listing everything and checking each one — the brief
-  only asked for status/district filters, but this is the natural next filter
+  stuck parcel" requires listing everything and checking each one — status and
+  district filters cover the base case, but this is the natural next filter
   for the exact on-call workflow the logging pass was built for.
 - **Column-level encryption for `aadhaar_number`/`pan_number`/`bank_account_number`.**
   Currently plain `TEXT`. See §6 — this is closer to a "should have shipped"
@@ -257,19 +256,19 @@ real integration.
   of districts; right now `district=Khorda` (typo for `Khordha`) silently
   returns zero results instead of erroring.
 - **CI** (GitHub Actions: typecheck, lint if added, test, build the Docker
-  image on every push). Didn't set this up given the time budget, but it's the
-  most obviously-missing piece for anything past a take-home.
+  image on every push). Didn't set this up given the time available, but it's
+  the most obviously-missing piece for anything past this stage.
 - **Rate limiting**, especially on the unauthenticated callback endpoint — see §6.
 
 ### What I knowingly left unfinished
 
 - No ESLint/Prettier — a deliberate scope call (strict TypeScript as the
-  quality gate; time went to the graded mechanics instead), not an oversight.
+  quality gate; time went to the core mechanics instead), not an oversight.
 - No owner reuse across parcels — each submission creates its own `owners` row
-  even if the same person owns multiple parcels. The brief's payload doesn't
-  ask for owner-level identity resolution, and guessing at dedup logic (fuzzy
-  name matching? Aadhaar as the join key?) felt like exactly the kind of
-  unrequested scope the brief warns against.
+  even if the same person owns multiple parcels. Nothing in the submission
+  payload signals how to resolve owner identity across submissions, and
+  guessing at dedup logic (fuzzy name matching? Aadhaar as the join key?)
+  felt like unrequested scope.
 - OpenAPI response examples exist for request bodies but not for every response
   variant (e.g. the exact shape of a 409 body isn't shown in Swagger, just its
   schema).
@@ -299,9 +298,9 @@ Concretely, in this session Claude:
 I asked it to stop and explain reasoning at several points (why migrations
 over ORM auto-create, why Kysely specifically, whether Vercel hosting made
 sense here) rather than accepting output silently — those exchanges are in the
-session history and shaped some of the calls above (e.g., Vercel hosting was
-proposed and explicitly rejected as incompatible with the brief's own
-constraints, not built and then removed).
+session history and shaped some of the calls above (e.g., hosting the backend
+itself on Vercel was proposed and explicitly rejected as a bad fit for this
+architecture, not built and then removed).
 
 ## 6. What I'd push back on
 
@@ -309,28 +308,28 @@ constraints, not built and then removed).
 `POST /api/v1/callbacks/registry` can flip a parcel to `verified` — the signal
 this whole platform exists to establish before money moves — and it sits
 directly behind a payload containing Aadhaar, PAN, and bank account numbers on
-`GET /parcels/:id`. I built it exactly as specified (no auth, per the brief),
-but if this were handed to me as a real integration task I'd push hard for at
-minimum an HMAC signature header the partner signs with a shared secret and we
-verify — standard practice for webhooks (Stripe, GitHub, every payment
-processor does this), and cheap to add. I did not add it unilaterally because
-the brief is explicit that this endpoint should be unauthenticated, and
-deviating silently would be worse than flagging it here.
+`GET /parcels/:id`. I built it exactly as specified (no auth), but if this were
+a real integration task I'd push hard for at minimum an HMAC signature header
+the partner signs with a shared secret and we verify — standard practice for
+webhooks (Stripe, GitHub, every payment processor does this), and cheap to add.
+I didn't add it unilaterally because the requirement is explicit that this
+endpoint should be unauthenticated, and deviating silently would be worse than
+flagging it here.
 
 **Storing full Aadhaar numbers is a compliance question, not just a security
-one.** The brief's payload includes `aadhaar_number` verbatim, and the ops
+one.** The submission payload includes `aadhaar_number` verbatim, and the ops
 requirement ("check them against physical documents on screen") implies it
 needs to be human-readable, not hashed. But the Aadhaar Act restricts
 storage/display of full Aadhaar numbers by private entities without UIDAI
 authorization — the standard pattern is masking to the last 4 digits for
 display and encrypting the full value at rest with an audited reveal path. I
-stored it as plain `TEXT` and displayed it in full, matching the brief's
-payload literally, but this is the first thing I'd raise with legal/compliance
-before this got anywhere near a real ops screen.
+stored it as plain `TEXT` and displayed it in full, matching the payload
+literally, but this is the first thing I'd raise with legal/compliance before
+this got anywhere near a real ops screen.
 
 **No encryption at rest for the financial fields either.**
 `bank_account_number`, `pan_number` — plain `TEXT` columns, same story. Fine
-for a take-home; I would not sign off on this schema for production without at
+for this stage; I would not sign off on this schema for production without at
 minimum column-level encryption.
 
 **The `scenario` debug field on `/verify` must not survive contact with a real
