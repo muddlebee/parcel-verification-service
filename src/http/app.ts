@@ -9,6 +9,7 @@ import { parcelsRouter } from "./routes/parcels.routes.js";
 import { documentsRouter } from "./routes/documents.routes.js";
 import { verifyRouter } from "./routes/verify.routes.js";
 import { callbackRouter } from "./routes/callback.routes.js";
+import { transitionsRouter } from "./routes/transitions.routes.js";
 import { buildOpenApiDocument } from "./openapi/document.js";
 
 export function buildApp() {
@@ -46,6 +47,7 @@ export function buildApp() {
   app.use("/api/v1", parcelsRouter);
   app.use("/api/v1", documentsRouter);
   app.use("/api/v1", verifyRouter);
+  app.use("/api/v1", transitionsRouter);
 
   app.use(errorHandler);
 
