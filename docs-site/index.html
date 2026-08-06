@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Parcel Verification Service — API Docs</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@5/swagger-ui.css" />
+    <style>
+      body { margin: 0; }
+      .topbar-note {
+        background: #1b1b1b;
+        color: #eaeaea;
+        font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        padding: 10px 20px;
+      }
+      .topbar-note a { color: #7fd1ff; }
+    </style>
+  </head>
+  <body>
+    <div class="topbar-note">
+      Static, browsable API reference for the
+      <a href="https://github.com/muddlebee/parcel-verification-service" target="_blank" rel="noopener">
+        Parcel Verification Service
+      </a>
+      — no backend behind this page. Run <code>docker compose up --build</code> from the repo for the actual
+      working service.
+    </div>
+    <div id="swagger-ui"></div>
+    <script src="https://unpkg.com/swagger-ui-dist@5/swagger-ui-bundle.js"></script>
+    <script>
+      window.ui = SwaggerUIBundle({
+        url: "./openapi.json",
+        dom_id: "#swagger-ui",
+        presets: [SwaggerUIBundle.presets.apis, SwaggerUIBundle.SwaggerUIStandalonePreset],
+        layout: "BaseLayout",
+      });
+    </script>
+  </body>
+</html>

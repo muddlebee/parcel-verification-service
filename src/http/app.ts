@@ -2,6 +2,7 @@ import express from "express";
 import { pinoHttp } from "pino-http";
 import swaggerUi from "swagger-ui-express";
 import { logger } from "../logger.js";
+import { env } from "../config/env.js";
 import { genRequestId, setRequestIdHeader } from "./middleware/requestId.js";
 import { errorHandler } from "./middleware/errorHandler.js";
 import { healthRouter } from "./routes/health.routes.js";
@@ -32,7 +33,25 @@ export function buildApp() {
   app.use(healthRouter);
   const openApiDocument = buildOpenApiDocument();
   app.get("/openapi.json", (_req, res) => res.json(openApiDocument));
-  app.use("/docs", swaggerUi.serve, swaggerUi.setup(openApiDocument));
+  // Auto-attaches X-API-Key to every "Try it out" call so the manual
+  // Authorize step isn't needed. Safe here specifically because this
+  // service has no real production deployment (out of scope per the
+  // brief) and the key is already a plaintext dev default checked into
+  // docker-compose.yml/.env.example — this is convenience, not a new
+  // exposure. Would need to be gated or removed if this pattern were ever
+  // reused for a service that actually goes to production.
+  app.use(
+    "/docs",
+    swaggerUi.serve,
+    swaggerUi.setup(openApiDocument, {
+      swaggerOptions: {
+        requestInterceptor: (req: { headers: Record<string, string> }) => {
+          req.headers["X-API-Key"] = env.API_KEY;
+          return req;
+        },
+      },
+    }),
+  );
 
   // callbackRouter MUST be mounted before the authenticated routers.
   // Express applies a router's own `router.use(middleware)` to every

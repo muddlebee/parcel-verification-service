@@ -6,3 +6,4 @@ uploads/*
 !uploads/.gitkeep
 coverage/
 .DS_Store
+.vercel

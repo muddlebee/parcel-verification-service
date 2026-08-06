@@ -11,6 +11,13 @@ ERD, state machine, sequence flow) and
 commit-by-commit build narrative including the bugs found and fixed along the
 way.
 
+A static, browsable copy of the API spec (Swagger UI, no backend behind it) is
+hosted at **https://docs-site-eta-ten.vercel.app** for convenience — this is
+purely documentation, not a running instance of the service. `docker compose
+up --build` is how the actual service runs and how it should be evaluated;
+see [`docs-site/`](docs-site/) for how the static copy is generated
+(`npm run docs:generate`).
+
 ## 1. How to run it
 
 Requires Docker and Docker Compose. Nothing else.
