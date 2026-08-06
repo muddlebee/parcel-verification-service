@@ -126,6 +126,27 @@ active-record magic, and critically: it doesn't own the schema. A full ORM
 either two competing migration systems or handing "ship your schema as SQL" to
 generated files that are harder to review as a diff.
 
+### Why there's a separate `/verify` endpoint, not an automatic trigger on submission
+
+The brief's integration section says "submitting a parcel triggers an
+asynchronous call to a partner." Read literally, that could mean `POST
+/parcels` itself should fire the registry call. I didn't build it that way —
+the state machine the brief also specifies has `documents_pending` as its own
+real state between `submitted` and `under_verification`, and "attaching
+documents" is a first-class capability, which only makes sense if there's a
+window where documents get attached *before* verification starts. Firing the
+registry call the instant a parcel is created, before any document exists to
+verify against, would make that state and that capability pointless.
+
+So `POST /parcels/:id/verify` is the explicit, ops/caller-triggered action that
+moves `documents_pending → under_verification` and enqueues the call — read
+"submitting a parcel [for verification]" as the two-step process the state
+machine describes, not literally the first `POST`. I considered auto-triggering
+on the first document upload instead, and rejected it: an implicit side effect
+on an upload endpoint is a worse API than an explicit action for something as
+consequential as kicking off a call to an external partner and starting a
+retry-with-backoff cycle.
+
 ### The state-machine ambiguity I resolved
 
 The brief's own diagram is ambiguous about whether `rejected`/`disputed` branch
