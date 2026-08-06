@@ -1,11 +1,11 @@
 import express from "express";
-import pinoHttp from "pino-http";
+import { pinoHttp } from "pino-http";
 import swaggerUi from "swagger-ui-express";
-import { logger } from "../logger";
-import { genRequestId, setRequestIdHeader } from "./middleware/requestId";
-import { errorHandler } from "./middleware/errorHandler";
-import { healthRouter } from "./routes/health.routes";
-import { buildOpenApiDocument } from "./openapi/document";
+import { logger } from "../logger.js";
+import { genRequestId, setRequestIdHeader } from "./middleware/requestId.js";
+import { errorHandler } from "./middleware/errorHandler.js";
+import { healthRouter } from "./routes/health.routes.js";
+import { buildOpenApiDocument } from "./openapi/document.js";
 
 export function buildApp() {
   const app = express();

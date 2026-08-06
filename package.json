@@ -20,7 +20,7 @@
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "type": "commonjs",
+  "type": "module",
   "dependencies": {
     "@asteasolutions/zod-to-openapi": "^9.1.0",
     "bullmq": "^6.0.8",

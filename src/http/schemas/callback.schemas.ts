@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { registry } from "../openapi/registry";
+import { registry } from "../openapi/registry.js";
 
 // Shape the (stubbed) partner uses to report a verification outcome.
 // `callback_id` is the partner's delivery identifier — the brief is explicit

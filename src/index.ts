@@ -1,6 +1,6 @@
-import { env } from "./config/env";
-import { logger } from "./logger";
-import { buildApp } from "./http/app";
+import { env } from "./config/env.js";
+import { logger } from "./logger.js";
+import { buildApp } from "./http/app.js";
 
 const app = buildApp();
 

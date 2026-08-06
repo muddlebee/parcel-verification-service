@@ -1,5 +1,5 @@
 import type { NextFunction, Request, Response } from "express";
-import { env } from "../../config/env";
+import { env } from "../../config/env.js";
 
 // Static API key per the brief ("a static API key in a header is fine" —
 // explicitly out of scope: real user management/auth). Deliberately NOT

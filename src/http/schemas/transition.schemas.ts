@@ -1,6 +1,6 @@
 import { z } from "zod";
-import { registry } from "../openapi/registry";
-import { PARCEL_STATUSES } from "../../domain/parcelStatus";
+import { registry } from "../openapi/registry.js";
+import { PARCEL_STATUSES } from "../../domain/parcelStatus.js";
 
 // Manual, ops-triggered transitions only. Right now that's just the
 // verified<->disputed pair — a competing claim surfacing later, or that

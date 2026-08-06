@@ -1,6 +1,6 @@
 import { z } from "zod";
-import { registry } from "../openapi/registry";
-import { PARCEL_STATUSES, REGISTRY_SYNC_STATUSES } from "../../domain/parcelStatus";
+import { registry } from "../openapi/registry.js";
+import { PARCEL_STATUSES, REGISTRY_SYNC_STATUSES } from "../../domain/parcelStatus.js";
 
 // Mirrors the submission payload in the brief. Validated strictly (not just
 // "is a string") because this data ends up on an ops screen next to physical
