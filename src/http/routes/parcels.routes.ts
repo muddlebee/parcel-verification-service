@@ -37,6 +37,7 @@ registry.registerPath({
 parcelsRouter.post("/parcels", async (req, res) => {
   const input = SubmitParcelRequestSchema.parse(req.body);
   const { id } = await createParcel(input);
+  req.log.info({ parcelId: id, khataNo: input.parcel.khata_no, district: input.parcel.district }, "parcel submitted");
   res.status(201).json({ id });
 });
 

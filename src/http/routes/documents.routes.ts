@@ -86,5 +86,10 @@ documentsRouter.post("/parcels/:id/documents", upload.single("file"), async (req
     storagePath,
   });
 
+  req.log.info(
+    { parcelId: id, documentId: document.id, documentType: document_type, sizeBytes: document.size_bytes },
+    "document attached",
+  );
+
   res.status(201).json(toDocument(document));
 });

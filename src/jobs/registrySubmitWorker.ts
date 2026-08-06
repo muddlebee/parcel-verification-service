@@ -26,8 +26,14 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
 export const registrySubmitWorker = new Worker<RegistrySubmitJobData>(
   "registry-submit",
   async (job: Job<RegistrySubmitJobData>) => {
-    const { parcelId, registryReferenceId, scenario } = job.data;
-    const log = logger.child({ parcelId, registryReferenceId, jobId: job.id, attempt: job.attemptsMade + 1 });
+    const { parcelId, registryReferenceId, scenario, requestId } = job.data;
+    const log = logger.child({
+      parcelId,
+      registryReferenceId,
+      requestId,
+      jobId: job.id,
+      attempt: job.attemptsMade + 1,
+    });
 
     log.info({ scenario }, "calling registry partner (stub)");
     await withTimeout(
@@ -44,13 +50,19 @@ export const registrySubmitWorker = new Worker<RegistrySubmitJobData>(
     if (scenario === "verified" || scenario === "rejected") {
       await registryCallbackDeliveryQueue.add(
         "deliver",
-        { parcelId, registryReferenceId, result: scenario, callbackId: randomUUID() },
+        { parcelId, registryReferenceId, result: scenario, callbackId: randomUUID(), requestId },
         { delay: Math.round(randomBetween(1000, 3000)) },
       );
     } else if (scenario === "duplicate") {
       // Same callback_id delivered twice, a few seconds apart — exactly
       // the "partner redelivers the same result" case the brief calls out.
-      const payload = { parcelId, registryReferenceId, result: "verified" as const, callbackId: randomUUID() };
+      const payload = {
+        parcelId,
+        registryReferenceId,
+        result: "verified" as const,
+        callbackId: randomUUID(),
+        requestId,
+      };
       await registryCallbackDeliveryQueue.add("deliver", payload, { delay: 1500 });
       await registryCallbackDeliveryQueue.add("deliver", payload, { delay: 3500 });
     }
@@ -64,12 +76,12 @@ function randomBetween(min: number, max: number): number {
 
 registrySubmitWorker.on("failed", (job: Job<RegistrySubmitJobData> | undefined, err: Error) => {
   if (!job) return;
-  const { parcelId } = job.data;
+  const { parcelId, requestId } = job.data;
   const maxAttempts = job.opts.attempts ?? 1;
   const exhausted = job.attemptsMade >= maxAttempts;
 
   logger.warn(
-    { parcelId, jobId: job.id, attempt: job.attemptsMade, maxAttempts, err, exhausted },
+    { parcelId, requestId, jobId: job.id, attempt: job.attemptsMade, maxAttempts, err, exhausted },
     exhausted ? "registry submit exhausted all retries" : "registry submit attempt failed, will retry",
   );
 

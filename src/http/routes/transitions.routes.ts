@@ -49,6 +49,8 @@ transitionsRouter.post("/parcels/:id/transitions", async (req, res) => {
     await applyTransition(trx, { parcelId: id, from: parcel.status, to, actor, reason });
   });
 
+  req.log.info({ parcelId: id, to, actor }, "manual transition applied");
+
   const result = await getParcelDetail(id);
   res.status(200).json(toParcelDetail(result!));
 });

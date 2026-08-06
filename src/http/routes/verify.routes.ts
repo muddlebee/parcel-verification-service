@@ -65,9 +65,10 @@ verifyRouter.post("/parcels/:id/verify", async (req, res) => {
       .execute();
   });
 
+  const resolvedScenario = scenario ?? pickRandomScenario();
   await registrySubmitQueue.add(
     "submit",
-    { parcelId: id, registryReferenceId, scenario: scenario ?? pickRandomScenario() },
+    { parcelId: id, registryReferenceId, scenario: resolvedScenario, requestId: req.id as string },
     {
       attempts: env.REGISTRY_MAX_ATTEMPTS,
       backoff: { type: "exponential", delay: env.REGISTRY_RETRY_BASE_MS },
@@ -75,6 +76,12 @@ verifyRouter.post("/parcels/:id/verify", async (req, res) => {
       removeOnFail: false,
     },
   );
+
+  // req.log (not the bare logger import) is pino-http's request-scoped
+  // child logger — this line carries X-Request-Id automatically, and
+  // parcelId/registryReferenceId here is the thread an on-call engineer
+  // picks up to follow the rest of the story in the worker logs.
+  req.log.info({ parcelId: id, registryReferenceId, scenario: resolvedScenario }, "parcel marked for verification");
 
   res.status(202).json({ registry_reference_id: registryReferenceId });
 });

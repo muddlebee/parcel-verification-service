@@ -44,5 +44,19 @@ callbackRouter.post("/callbacks/registry", async (req, res) => {
     rawPayload: input,
   });
 
+  // x-debug-origin-request-id is only ever set by our own stub delivery
+  // worker (see callbackDeliveryWorker.ts) — a real partner wouldn't send
+  // it, and its absence is harmless (just undefined in the log).
+  req.log.info(
+    {
+      parcelId: result.parcelId,
+      callbackId: input.callback_id,
+      result: input.result,
+      outcome: result.status,
+      originRequestId: req.header("x-debug-origin-request-id"),
+    },
+    "registry callback processed",
+  );
+
   res.status(200).json({ status: result.status, parcel_id: result.parcelId });
 });
