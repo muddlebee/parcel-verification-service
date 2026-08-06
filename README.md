@@ -1,345 +1,179 @@
 # Parcel Verification Service
 
-A parcel verification service — accepts a land parcel for verification, moves
-it through a multi-stage pipeline involving an external land-registry partner,
-and keeps a defensible record of every state change.
+Accepts a land parcel for verification, moves it through a multi-stage
+pipeline involving an external land-registry partner, and keeps a defensible
+record of every state change.
 
-See [`docs/architecture.md`](docs/architecture.md) for diagrams (system
-overview, ERD, state machine, sequence flow) and
-[`docs/IMPLEMENTATION_LOG.md`](docs/IMPLEMENTATION_LOG.md) for a chronological,
-commit-by-commit build narrative including the bugs found and fixed along the
-way.
-
-A static, browsable copy of the API spec (Swagger UI, no backend behind it) is
-hosted at **https://docs-site-eta-ten.vercel.app** for convenience — this is
-purely documentation, not a running instance of the service. `docker compose
-up --build` is how the actual service runs and how it should be evaluated;
-see [`docs-site/`](docs-site/) for how the static copy is generated
-(`npm run docs:generate`).
+Diagrams: [`docs/architecture.md`](docs/architecture.md). Commit-by-commit
+build narrative: [`docs/IMPLEMENTATION_LOG.md`](docs/IMPLEMENTATION_LOG.md).
+Static Swagger docs (no backend behind it, just for browsing):
+**https://docs-site-eta-ten.vercel.app**.
 
 ## 1. How to run it
-
-Requires Docker and Docker Compose. Nothing else.
 
 ```bash
 docker compose up --build
 ```
 
-That's it. This brings up Postgres, Redis, and the API; runs migrations
-automatically before the server starts; and the service is ready at
-`http://localhost:3000`.
+Brings up Postgres, Redis, and the API; runs migrations automatically. Ready
+at `http://localhost:3000`.
 
 ```bash
-# liveness/readiness (checks Postgres + Redis)
-curl http://localhost:3000/healthz
+curl http://localhost:3000/healthz          # liveness (checks Postgres + Redis)
+open http://localhost:3000/docs             # Swagger UI
 
-# interactive API docs (Swagger UI, generated from the same zod schemas
-# the handlers validate against — can't drift)
-open http://localhost:3000/docs
-
-# every authenticated route needs this header (static key — see design
-# decisions below for why)
-# default in docker-compose.yml is dev-local-api-key
 curl -H "X-API-Key: dev-local-api-key" http://localhost:3000/api/v1/parcels
 ```
 
-### Running it locally without Docker (for development)
+**Local dev (no Docker for the app):**
 
 ```bash
 npm install
-docker compose up -d postgres redis   # still need real Postgres/Redis
+docker compose up -d postgres redis
 cp .env.example .env
 npm run migrate:up
-npm run dev                            # tsx watch, restarts on save
+npm run dev
 ```
 
-### Tests
+**Tests** (need Postgres/Redis up — runs against the real thing, not mocks):
 
 ```bash
-docker compose up -d postgres redis    # tests run against the real DB/queue, not mocks
-npm test
+docker compose up -d postgres redis
+npm test   # 32 tests, ~9s
 ```
-
-32 tests (1 file unit, 6 files integration), ~9 seconds. `vitest.config.ts` sets
-faster retry/backoff timing for the test run specifically (150ms base vs the
-already-scaled-down 2s dev default) so the retry-exhaustion tests don't take
-30+ seconds each, and binds a real listener on a dedicated port (3999) because
-one test file's callback-delivery worker makes a genuine HTTP loopback call —
-see the comment in `test/integration/registryRetry.test.ts` for why supertest's
-default in-memory app can't satisfy that on its own.
 
 ## 2. API design
 
-Versioned from the start (`/api/v1/...`) even with only one version —
-retrofitting versioning after real clients exist is far more painful than
-starting with it.
+`/api/v1/...` versioned from day one — retrofitting versioning later is worse
+than starting with it.
 
 | Method | Path | Auth | Purpose |
 |---|---|---|---|
-| `GET` | `/healthz` | none | Container-orchestrator liveness/readiness |
-| `GET` | `/docs`, `/openapi.json` | none | Swagger UI / generated OpenAPI spec |
-| `POST` | `/api/v1/parcels` | API key | Submit a parcel for verification |
-| `GET` | `/api/v1/parcels/:id` | API key | Parcel + owner + documents + full transition history |
+| `GET` | `/healthz` | none | Liveness/readiness |
+| `GET` | `/docs`, `/openapi.json` | none | Swagger UI / OpenAPI spec |
+| `POST` | `/api/v1/parcels` | API key | Submit a parcel |
+| `GET` | `/api/v1/parcels/:id` | API key | Parcel + owner + documents + history |
 | `GET` | `/api/v1/parcels` | API key | List, filter by `status`/`district`, paginated |
-| `POST` | `/api/v1/parcels/:id/documents` | API key | Attach a document (multipart, disk storage) |
-| `POST` | `/api/v1/parcels/:id/verify` | API key | Mark ready for verification — triggers the async registry call |
-| `POST` | `/api/v1/parcels/:id/transitions` | API key | Manual ops transition — the only way in/out of `disputed` |
-| `POST` | `/api/v1/callbacks/registry` | **none** | Registry partner delivers a result — see §3 and §6 |
+| `POST` | `/api/v1/parcels/:id/documents` | API key | Attach a document |
+| `POST` | `/api/v1/parcels/:id/verify` | API key | Trigger the async registry call |
+| `POST` | `/api/v1/parcels/:id/transitions` | API key | Manual ops transition (`verified`↔`disputed`) |
+| `POST` | `/api/v1/callbacks/registry` | **none** | Partner delivers a result — see §3, §6 |
 
-### What I deliberately didn't expose
-
-- **No `PATCH`/`PUT /parcels/:id`.** Once submitted, khata/plot/owner fields
-  aren't editable through a generic update endpoint. This data anchors a title
-  chain — silently rewriting it outside the audit trail is exactly the kind of
-  thing this service exists to prevent. A real correction workflow would need
-  its own audited process, which isn't built here.
-- **No `DELETE /parcels/:id`, no "unsubmit."** The state machine has no path
-  back to a prior state for a reason — this is meant to be a defensible record,
-  and hard deletion contradicts that on its face.
-- **No document-download endpoint.** The scope here is attaching documents,
-  not serving them back. Building a download route opens its own security
-  surface (content-type sniffing, path handling) that's a separate concern;
-  ops has direct volume access to `./uploads` for now.
-- **No raw admin override for a stuck `registry_sync_status`.** An operator
-  should re-trigger through a domain-meaningful action, not be handed a field
-  editor. (I'd add a dedicated `POST /parcels/:id/retry-verification` endpoint
-  for this with another week — see §4.)
-- **No bulk endpoints.** Not needed for this scope, and bulk state-changing
-  operations need their own per-item audit semantics — real complexity with
-  no signal it was wanted.
+**Deliberately not exposed:** `PATCH`/`DELETE /parcels/:id` (owner/khata data
+anchors a title chain — no silent rewrites outside the audit trail; no
+"unsubmit," the record is meant to be permanent); a document-download route
+(out of scope, ops has direct volume access); a raw override for a stuck
+`registry_sync_status` (should be a domain action, not a field editor — see
+§4); bulk endpoints (each item needs its own audit semantics, not asked for).
 
 ## 3. Design decisions
 
-### Schema
+**Schema.** Five tables as versioned `node-pg-migrate` migrations, not ORM
+`sync`. `parcels`, `owners` (1:1), `documents`, `parcel_transitions`
+(append-only audit log), `registry_callbacks` (idempotency ledger). ERD in
+[`docs/architecture.md`](docs/architecture.md). `parcels.status` is the
+5-state machine; a separate `registry_sync_status`
+(`idle→queued→retrying→exhausted/done`) tracks the outbound partner call so a
+stuck call is operator-visible without inventing a 6th business state.
 
-Five tables, shipped as versioned `node-pg-migrate` migrations
-(`src/db/migrations/`), not an ORM `synchronize`/`db push`. `parcels`,
-`owners` (1:1), `documents`, `parcel_transitions` (the audit log — append-only,
-`from_state` nullable only on the creation row), `registry_callbacks` (the
-idempotency ledger). Full reasoning and the ERD are in
-[`docs/architecture.md`](docs/architecture.md).
+**Kysely, not an ORM.** Typed SQL, checked against a hand-written `Database`
+type that mirrors the migrations — no code generation, and it doesn't own the
+schema. A full ORM would want to own migrations in its own format too, which
+conflicts with shipping SQL as the reviewable artifact.
 
-`parcels` carries two independent status fields: `status` (the 5-state
-machine) and `registry_sync_status` (`idle → queued → retrying → exhausted/done`).
-The latter tracks the outbound partner call without inventing a 6th business
-state — a stuck call is operator-visible through this field while the parcel
-stays in a perfectly valid `under_verification`.
+**Why a separate `/verify` endpoint** instead of firing the registry call on
+`POST /parcels` directly: the state machine has `documents_pending` as a real
+state and document-attachment as its own capability, which only makes sense
+if verification is a distinct, later step. `POST /parcels/:id/verify` is that
+explicit trigger. (An implicit trigger on first document upload was the other
+option considered — rejected: too consequential an action to be a side effect.)
 
-**Kysely, not an ORM.** A typed SQL query builder — real SQL-shaped queries,
-type-checked against a hand-written `Database` interface
-(`src/db/types.ts`) that mirrors the migrations. No code generation, no
-active-record magic, and critically: it doesn't own the schema. A full ORM
-(Prisma/TypeORM) wants to own migrations in its own format, which would mean
-either two competing migration systems or handing "ship your schema as SQL" to
-generated files that are harder to review as a diff.
+**State-machine ambiguity resolved:** `disputed` is reachable only from
+`verified`, never directly from `under_verification`; `rejected` is terminal.
+Enforced in `src/domain/stateMachine.ts`, tested exhaustively over all 36
+`(from, to)` pairs. Diagram in
+[`docs/architecture.md`](docs/architecture.md#state-machine). This is a
+judgment call on genuinely ambiguous spec language — flagging it rather than
+burying it.
 
-### Why there's a separate `/verify` endpoint, not an automatic trigger on submission
+**Idempotency:** `UNIQUE(parcel_id, external_callback_id)` on
+`registry_callbacks`, `INSERT ... ON CONFLICT DO NOTHING`, checked *before*
+the state transition in the same transaction — a duplicate never touches
+parcel state. Rejected a Redis-based dedup key: faster, but volatile, and this
+is meant to be a defensible record.
 
-The integration requirement says "submitting a parcel triggers an
-asynchronous call to a partner." Read literally, that could mean `POST
-/parcels` itself should fire the registry call. I didn't build it that way —
-the state machine also specifies `documents_pending` as its own real state
-between `submitted` and `under_verification`, and "attaching documents" is a
-first-class capability, which only makes sense if there's a window where
-documents get attached *before* verification starts. Firing the registry call
-the instant a parcel is created, before any document exists to verify against,
-would make that state and that capability pointless.
+**Retry strategy:** BullMQ/Redis, exponential backoff, scaled via env vars so
+a full retry-to-exhaustion cycle takes under a minute for review instead of a
+realistic 5–30s/call. `registry_sync_status` hits `exhausted` on final
+failure — the operator-actionable signal, no log-polling required. This is
+also the justification for Redis in the stack: a durable retry queue is
+something it's genuinely the right tool for. Rejected a plain
+`setTimeout` retry: doesn't survive a process restart, and "a partner outage
+must not lose a submission" requires durability.
 
-So `POST /parcels/:id/verify` is the explicit, ops/caller-triggered action that
-moves `documents_pending → under_verification` and enqueues the call — read
-"submitting a parcel [for verification]" as the two-step process the state
-machine describes, not literally the first `POST`. I considered auto-triggering
-on the first document upload instead, and rejected it: an implicit side effect
-on an upload endpoint is a worse API than an explicit action for something as
-consequential as kicking off a call to an external partner and starting a
-retry-with-backoff cycle.
+**The stub partner** (`src/registry/stubPartnerClient.ts`) is the one file a
+real integration would replace. Two-job design — submit, then a *genuine HTTP
+POST* back into this service's own callback route on a delay — so the
+callback handler's idempotency and auth-free routing get exercised by real
+traffic, including deliberate double-delivery for `"duplicate"`. `scenario`
+is an explicit debug-only field on `/verify`, not part of a real partner's
+API — flagged again in §6.
 
-### The state-machine ambiguity I resolved
+## 4. Another week / left unfinished
 
-The original state diagram is ambiguous about whether `rejected`/`disputed`
-branch directly off `under_verification`, or only `disputed` branches off
-`verified`. I resolved it as: `submitted → documents_pending →
-under_verification`, which then splits to either `verified` or `rejected`;
-`verified` and `disputed` form a reversible pair on their own (see the state
-diagram in [`docs/architecture.md`](docs/architecture.md#state-machine) for
-the full picture).
-
-`disputed` is only reachable from `verified` (a competing claim surfacing
-*after* a parcel is already verified), never directly from `under_verification`.
-`rejected` is terminal — nothing describes a path back. This is enforced
-server-side by `src/domain/stateMachine.ts`, unit-tested exhaustively over all
-36 `(from, to)` state pairs, not just the happy-path list.
-
-I'd genuinely have preferred to confirm this interpretation directly rather
-than assume it — documented the assumption instead of blocking on a round
-trip, given the time constraints, and this is exactly the kind of thing worth
-double-checking in a follow-up conversation.
-
-### Idempotency
-
-The unique constraint `UNIQUE(parcel_id, external_callback_id)` on
-`registry_callbacks` is the actual dedup mechanism — not an in-memory cache, not
-a Redis `SETNX`. `INSERT ... ON CONFLICT DO NOTHING`, checked in the same
-transaction as (and *before*) the state transition it gates. A duplicate
-delivery is caught and short-circuited before parcel state is touched at all —
-there's no window where a duplicate could partially apply. Verified against
-real duplicate HTTP deliveries (the stub genuinely re-POSTs the same
-`callback_id`, not a synthetic test shortcut) — see
-`test/integration/registryRetry.test.ts`.
-
-**Tradeoff rejected:** a Redis-based idempotency key (`SET NX` with a TTL) would
-work and would be faster to check. Rejected because Redis is volatile and this
-is meant to be a defensible record — an idempotency guarantee that can silently
-evaporate on a Redis restart doesn't belong in an audit-trail service.
-
-### Retry strategy
-
-BullMQ on Redis. `attempts` + exponential `backoff` configured at enqueue time
-(`src/http/routes/verify.routes.ts`), scaled down via env vars
-(`REGISTRY_RETRY_BASE_MS`, `REGISTRY_MAX_ATTEMPTS`, `REGISTRY_CALL_TIMEOUT_MS`)
-so a reviewer sees a full retry-to-exhaustion cycle in under a minute instead of
-a realistic 5–30s-per-call timing. On final failure, `registry_sync_status`
-flips to `exhausted` — an operator-actionable signal surfaced on
-`GET /parcels/:id` without polling logs.
-
-**This is the one-sentence justification for Redis in the stack:** BullMQ backs
-the outbound-call retry queue, which is something Redis is genuinely the right
-tool for — delayed jobs, atomic attempt-counting, a real dead-letter state —
-not something added to check a box.
-
-**Tradeoff rejected:** a simple setTimeout-based retry loop in the request
-handler. Rejected because it doesn't survive a process restart mid-retry, and
-"a partner outage must not corrupt parcel state or lose a submission" only
-holds with a durable queue.
-
-### The stub partner, and why it's designed the way it is
-
-`src/registry/stubPartnerClient.ts` is the one file that would be deleted for a
-real integration. Everything downstream is written against "a slow async call
-that sometimes doesn't come back," not against this stub specifically.
-
-Two-job design (`registry-submit` then `registry-callback-delivery`) instead of
-faking the whole thing in one function: the delivery job makes a **genuine HTTP
-POST** back into this same service's own callback route, after a delay, exactly
-like a real partner's webhook would. This means the callback handler's
-idempotency check, its unauthenticated routing, and its error handling all get
-exercised by real traffic — including the deliberate double-delivery for the
-`"duplicate"` scenario — not a shortcut that only proves the code compiles.
-
-`scenario` is an explicit, documented debug-only field on the verify request —
-not something a real partner's API would expose. It's the honest way to
-demonstrate success/failure/timeout/duplicate deterministically without access
-to a real partner. Flagged again in §6 as something to strip before this ever
-fronted a real integration.
-
-## 4. What I'd do with another week
-
-- **Split the workers into their own process/container.** Both are already
-  standalone `BullMQ.Worker` instances (`src/jobs/`) — running them in-process
-  with the API was the simplest thing that avoids container-orchestration
-  complexity given the scope, but it's a one-file entrypoint change to split
-  them, not a redesign.
-- **A reconciliation sweep.** A periodic job requeuing parcels that have sat in
-  `under_verification` with `registry_sync_status` stuck at something other
-  than `done`/`exhausted` for too long (e.g. the process crashed mid-job before
-  BullMQ's own retry accounting caught up).
-- **A dedicated `POST /parcels/:id/retry-verification`** so ops can re-trigger a
-  parcel that hit `exhausted`, instead of it being a dead end.
-- **Filter `GET /parcels` by `registry_sync_status`.** Right now "show me every
-  stuck parcel" requires listing everything and checking each one — status and
-  district filters cover the base case, but this is the natural next filter
-  for the exact on-call workflow the logging pass was built for.
-- **Column-level encryption for `aadhaar_number`/`pan_number`/`bank_account_number`.**
-  Currently plain `TEXT`. See §6 — this is closer to a "should have shipped"
-  than a nice-to-have.
-- **A canonical district lookup** instead of free-text — Odisha has a fixed set
-  of districts; right now `district=Khorda` (typo for `Khordha`) silently
-  returns zero results instead of erroring.
-- **CI** (GitHub Actions: typecheck, lint if added, test, build the Docker
-  image on every push). Didn't set this up given the time available, but it's
-  the most obviously-missing piece for anything past this stage.
-- **Rate limiting**, especially on the unauthenticated callback endpoint — see §6.
-
-### What I knowingly left unfinished
-
-- No ESLint/Prettier — a deliberate scope call (strict TypeScript as the
-  quality gate; time went to the core mechanics instead), not an oversight.
-- No owner reuse across parcels — each submission creates its own `owners` row
-  even if the same person owns multiple parcels. Nothing in the submission
-  payload signals how to resolve owner identity across submissions, and
-  guessing at dedup logic (fuzzy name matching? Aadhaar as the join key?)
-  felt like unrequested scope.
-- OpenAPI response examples exist for request bodies but not for every response
-  variant (e.g. the exact shape of a 409 body isn't shown in Swagger, just its
-  schema).
+- Split the workers into their own process — already standalone `BullMQ.Worker`s, a one-file entrypoint change.
+- A reconciliation sweep for parcels stuck mid-retry after a crash.
+- `POST /parcels/:id/retry-verification` so ops can recover an `exhausted` parcel.
+- Filter `GET /parcels` by `registry_sync_status` (find every stuck parcel at once).
+- Column-level encryption for `aadhaar_number`/`pan_number`/`bank_account_number` — see §6.
+- A canonical district lookup instead of free text.
+- CI (typecheck/test/build on push) — didn't set it up, most obvious gap past this stage.
+- Rate limiting, especially on the unauthenticated callback — see §6.
+- No ESLint/Prettier (deliberate — strict TS as the gate, time went to core mechanics).
+- No owner dedup across parcels (no signal for how to resolve identity; guessing felt like scope creep).
+- OpenAPI examples cover request bodies, not every response variant.
 
 ## 5. AI assistance
 
-Built with **Claude Code** (Claude Sonnet 5), used for essentially the entire
-implementation — architecture discussion, all application code, migrations,
-tests, and this documentation. I directed the architecture decisions (Redis's
-role, Kysely over an ORM, the two-job stub-partner design, the state-machine
-ambiguity resolution, the ops-manual-transition endpoint) and reviewed/tested
-every commit before it landed — nothing here is unreviewed generated output.
+Built with **Claude Code** (Sonnet 5) — architecture discussion, all code,
+migrations, tests, docs. I directed the architecture calls (Redis's role,
+Kysely over an ORM, the two-job stub design, the state-machine resolution)
+and reviewed/tested every commit; nothing here is unreviewed output.
 
-Concretely, in this session Claude:
-- Implemented every file, migration, and test.
-- Found and fixed six real bugs during manual verification (not just
-  hypothesized in review): an unhandled `pg.Pool` error crashing the process on
-  a Postgres restart; a missing Kysely `Generated<>` annotation breaking
-  inserts; `pg`'s default `DATE` parser silently shifting dates by timezone; a
-  CJS/ESM default-export interop issue (twice — `pino-http`, then `ioredis`);
-  an Express router-mounting-order bug that 401'd the unauthenticated callback
-  route; and a test-only bug where the callback-delivery worker's real HTTP
-  loopback had nothing to connect to under supertest's default in-memory app.
-- Ran the actual server and `docker compose up --build` after every commit, not
-  just the test suite — several of the bugs above only surfaced that way.
-
-I asked it to stop and explain reasoning at several points (why migrations
-over ORM auto-create, why Kysely specifically, whether Vercel hosting made
-sense here) rather than accepting output silently — those exchanges are in the
-session history and shaped some of the calls above (e.g., hosting the backend
-itself on Vercel was proposed and explicitly rejected as a bad fit for this
-architecture, not built and then removed).
+It found and fixed six real bugs during manual verification, not just review:
+an unhandled `pg.Pool` error crashing the process on a Postgres restart, a
+missing Kysely `Generated<>` annotation, `pg`'s `DATE` parser silently
+shifting timezones, a CJS/ESM interop issue (twice), an Express
+router-mounting-order bug that broke the unauthenticated callback route, and
+a test-only bug where a worker's real HTTP loopback had nothing to connect
+to. Full detail in `docs/IMPLEMENTATION_LOG.md`. I pushed back on it at a few
+points (why migrations over ORM auto-create, why Kysely, whether hosting the
+backend on Vercel made sense — rejected as a bad architectural fit and never
+built) rather than taking output at face value.
 
 ## 6. What I'd push back on
 
 **The unauthenticated callback endpoint is a real risk, not a formality.**
-`POST /api/v1/callbacks/registry` can flip a parcel to `verified` — the signal
-this whole platform exists to establish before money moves — and it sits
-directly behind a payload containing Aadhaar, PAN, and bank account numbers on
-`GET /parcels/:id`. I built it exactly as specified (no auth), but if this were
-a real integration task I'd push hard for at minimum an HMAC signature header
-the partner signs with a shared secret and we verify — standard practice for
-webhooks (Stripe, GitHub, every payment processor does this), and cheap to add.
-I didn't add it unilaterally because the requirement is explicit that this
-endpoint should be unauthenticated, and deviating silently would be worse than
-flagging it here.
+`POST /api/v1/callbacks/registry` can flip a parcel to `verified` — the exact
+signal this platform exists to establish before money moves — sitting behind
+a payload with Aadhaar/PAN/bank details on `GET /parcels/:id`. Built exactly
+as specified (no auth), but a real integration needs at minimum an HMAC
+signature the partner signs and we verify — standard for webhooks, cheap to
+add. Didn't add it unilaterally since the no-auth requirement is explicit;
+flagging beats silently deviating.
 
-**Storing full Aadhaar numbers is a compliance question, not just a security
-one.** The submission payload includes `aadhaar_number` verbatim, and the ops
-requirement ("check them against physical documents on screen") implies it
-needs to be human-readable, not hashed. But the Aadhaar Act restricts
-storage/display of full Aadhaar numbers by private entities without UIDAI
-authorization — the standard pattern is masking to the last 4 digits for
-display and encrypting the full value at rest with an audited reveal path. I
-stored it as plain `TEXT` and displayed it in full, matching the payload
-literally, but this is the first thing I'd raise with legal/compliance before
-this got anywhere near a real ops screen.
+**Storing full Aadhaar numbers unmasked is a compliance question, not just a
+security one.** The Aadhaar Act restricts storage/display of full numbers by
+private entities without authorization — standard practice is masking to the
+last 4 digits with an audited reveal path, plus encryption at rest (also true
+for `pan_number`/`bank_account_number`, currently plain `TEXT`). Built to
+match the payload literally; this is the first thing I'd raise with
+legal/compliance before a real ops screen.
 
-**No encryption at rest for the financial fields either.**
-`bank_account_number`, `pan_number` — plain `TEXT` columns, same story. Fine
-for this stage; I would not sign off on this schema for production without at
-minimum column-level encryption.
+**The `scenario` debug field must not survive contact with a real partner.**
+Documented as debug-only, but "documented" isn't "impossible to call in
+production" — needs a build-time gate or removal.
 
-**The `scenario` debug field on `/verify` must not survive contact with a real
-partner.** It's documented as debug-only in the OpenAPI schema and in this
-README, but "documented as debug-only" is not the same as "impossible to call
-in production." A real rollout needs this gated behind a non-production build
-flag or removed entirely, not just labeled.
-
-**Free-text `district` filtering will produce silent false negatives.** Odisha
-has a fixed, known set of districts. `district=Khorda` (missing an `h`) returns
-an empty list, not an error — indistinguishable from "no parcels in this
-district" to whoever's querying. I'd push for a canonical lookup/enum before
-this API had real callers, not just better client-side validation.
+**Free-text `district` filtering produces silent false negatives.** A typo
+(`Khorda` vs `Khordha`) returns an empty list, indistinguishable from "no
+parcels here." A canonical lookup beats client-side validation for this.
