@@ -1,6 +1,7 @@
 import type { NextFunction, Request, Response } from "express";
 import { ZodError } from "zod";
 import { logger } from "../../logger.js";
+import { InvalidTransitionError } from "../../domain/stateMachine.js";
 
 export class ApiError extends Error {
   constructor(
@@ -26,6 +27,13 @@ export function errorHandler(err: unknown, req: Request, res: Response, _next: N
         message: err.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; "),
         request_id: requestId,
       },
+    });
+    return;
+  }
+
+  if (err instanceof InvalidTransitionError) {
+    res.status(409).json({
+      error: { code: err.code, message: err.message, request_id: requestId },
     });
     return;
   }
