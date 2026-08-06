@@ -14,8 +14,8 @@ export interface ParcelsTable {
   // Converted to number at the API boundary, not here.
   area_sqft: string;
   claimed_ownership_since: string;
-  status: ParcelStatus;
-  registry_sync_status: RegistrySyncStatus;
+  status: Generated<ParcelStatus>;
+  registry_sync_status: Generated<RegistrySyncStatus>;
   registry_reference_id: string | null;
   created_at: CreatedAt;
   updated_at: ColumnType<Date, string | undefined, string>;

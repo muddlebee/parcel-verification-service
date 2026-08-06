@@ -48,6 +48,11 @@ export const SubmitParcelRequestSchema = registry.register(
 );
 export type SubmitParcelRequest = z.infer<typeof SubmitParcelRequestSchema>;
 
+export const CreateParcelResponseSchema = registry.register(
+  "CreateParcelResponse",
+  z.object({ id: z.string().uuid() }),
+);
+
 export const TransitionRecordSchema = registry.register(
   "TransitionRecord",
   z.object({
