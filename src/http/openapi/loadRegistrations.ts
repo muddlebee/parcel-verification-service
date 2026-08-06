@@ -9,3 +9,4 @@ import "../schemas/transition.schemas.js";
 import "../schemas/callback.schemas.js";
 import "../routes/health.routes.js";
 import "../routes/parcels.routes.js";
+import "../routes/documents.routes.js";

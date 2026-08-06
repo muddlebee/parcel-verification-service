@@ -31,7 +31,7 @@ function toOwner(row: Selectable<OwnersTable>) {
   };
 }
 
-function toDocument(row: Selectable<DocumentsTable>) {
+export function toDocument(row: Selectable<DocumentsTable>) {
   return {
     id: row.id,
     document_type: row.document_type,

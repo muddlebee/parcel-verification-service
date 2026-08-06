@@ -17,3 +17,26 @@ export const AttachDocumentFieldsSchema = z.object({
 
 export const ALLOWED_DOCUMENT_MIME_TYPES = ["image/jpeg", "image/png", "application/pdf"] as const;
 export const MAX_DOCUMENT_SIZE_BYTES = 10 * 1024 * 1024; // 10MB
+
+export const MIME_TYPE_EXTENSIONS: Record<(typeof ALLOWED_DOCUMENT_MIME_TYPES)[number], string> = {
+  "image/jpeg": ".jpg",
+  "image/png": ".png",
+  "application/pdf": ".pdf",
+};
+
+const MAGIC_BYTES: Record<(typeof ALLOWED_DOCUMENT_MIME_TYPES)[number], readonly number[]> = {
+  "application/pdf": [0x25, 0x50, 0x44, 0x46], // %PDF
+  "image/png": [0x89, 0x50, 0x4e, 0x47],
+  "image/jpeg": [0xff, 0xd8, 0xff],
+};
+
+// The multipart Content-Type header for a field is whatever the client
+// claims it is — trusting it alone means a renamed .exe with a spoofed
+// header sails through the fileFilter allowlist. Checking the actual
+// leading bytes closes that gap; it's not perfect content sniffing, just
+// enough to catch "this isn't actually a PDF/PNG/JPEG".
+export function matchesDeclaredMimeType(buffer: Buffer, mimetype: string): boolean {
+  const signature = MAGIC_BYTES[mimetype as keyof typeof MAGIC_BYTES];
+  if (!signature) return false;
+  return signature.every((byte, i) => buffer[i] === byte);
+}

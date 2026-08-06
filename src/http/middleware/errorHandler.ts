@@ -1,5 +1,6 @@
 import type { NextFunction, Request, Response } from "express";
 import { ZodError } from "zod";
+import { MulterError } from "multer";
 import { logger } from "../../logger.js";
 import { InvalidTransitionError } from "../../domain/stateMachine.js";
 
@@ -27,6 +28,13 @@ export function errorHandler(err: unknown, req: Request, res: Response, _next: N
         message: err.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; "),
         request_id: requestId,
       },
+    });
+    return;
+  }
+
+  if (err instanceof MulterError) {
+    res.status(400).json({
+      error: { code: `UPLOAD_${err.code}`, message: err.message, request_id: requestId },
     });
     return;
   }

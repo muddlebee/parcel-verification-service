@@ -6,6 +6,7 @@ import { genRequestId, setRequestIdHeader } from "./middleware/requestId.js";
 import { errorHandler } from "./middleware/errorHandler.js";
 import { healthRouter } from "./routes/health.routes.js";
 import { parcelsRouter } from "./routes/parcels.routes.js";
+import { documentsRouter } from "./routes/documents.routes.js";
 import { buildOpenApiDocument } from "./openapi/document.js";
 
 export function buildApp() {
@@ -30,9 +31,10 @@ export function buildApp() {
   app.get("/openapi.json", (_req, res) => res.json(openApiDocument));
   app.use("/docs", swaggerUi.serve, swaggerUi.setup(openApiDocument));
 
-  // Documents/callbacks mount here in subsequent commits — callbacks
-  // deliberately unauthenticated per the brief, see README.
+  // Callbacks mount here in a subsequent commit, deliberately
+  // unauthenticated per the brief — see README.
   app.use("/api/v1", parcelsRouter);
+  app.use("/api/v1", documentsRouter);
 
   app.use(errorHandler);
 
