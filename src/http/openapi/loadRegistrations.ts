@@ -12,3 +12,4 @@ import "../routes/health.routes.js";
 import "../routes/parcels.routes.js";
 import "../routes/documents.routes.js";
 import "../routes/verify.routes.js";
+import "../routes/callback.routes.js";

@@ -8,6 +8,7 @@ import { healthRouter } from "./routes/health.routes.js";
 import { parcelsRouter } from "./routes/parcels.routes.js";
 import { documentsRouter } from "./routes/documents.routes.js";
 import { verifyRouter } from "./routes/verify.routes.js";
+import { callbackRouter } from "./routes/callback.routes.js";
 import { buildOpenApiDocument } from "./openapi/document.js";
 
 export function buildApp() {
@@ -32,8 +33,16 @@ export function buildApp() {
   app.get("/openapi.json", (_req, res) => res.json(openApiDocument));
   app.use("/docs", swaggerUi.serve, swaggerUi.setup(openApiDocument));
 
-  // Callbacks mount here in a subsequent commit, deliberately
-  // unauthenticated per the brief — see README.
+  // callbackRouter MUST be mounted before the authenticated routers.
+  // Express applies a router's own `router.use(middleware)` to every
+  // request forwarded into it by app.use(prefix, router) — not just
+  // requests matching that router's own routes. parcelsRouter's blanket
+  // apiKeyAuth would otherwise intercept /api/v1/callbacks/registry too
+  // (it's also under /api/v1) and 401 it before Express ever tries
+  // callbackRouter. callbackRouter itself has no such blanket middleware,
+  // so it correctly falls through via next() for paths it doesn't own —
+  // mounting order only matters in this one direction.
+  app.use("/api/v1", callbackRouter);
   app.use("/api/v1", parcelsRouter);
   app.use("/api/v1", documentsRouter);
   app.use("/api/v1", verifyRouter);

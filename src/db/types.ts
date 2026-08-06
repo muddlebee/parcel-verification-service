@@ -59,7 +59,11 @@ export interface RegistryCallbacksTable {
   parcel_id: string;
   external_callback_id: string;
   result: "verified" | "rejected";
-  raw_payload: unknown;
+  // Selected back as a parsed object (pg auto-parses jsonb), inserted as a
+  // JSON string (we JSON.stringify the payload ourselves rather than rely
+  // on pg's implicit object serialization, to keep the insert path
+  // unambiguous).
+  raw_payload: ColumnType<unknown, string, never>;
   received_at: CreatedAt;
 }
 
