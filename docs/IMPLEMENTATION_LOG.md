@@ -74,7 +74,14 @@ Kysely gives compile-time-checked queries without an ORM owning the schema.
 **Two things forced a project-wide change here:** Kysely ships ESM-only, so the
 whole project switched to `"type": "module"` with `NodeNext` resolution
 (every relative import now carries an explicit `.js` extension — a NodeNext ESM
-requirement, even though the source files are `.ts`).
+requirement, even though the source files are `.ts`). Switching resolution
+modes also surfaced a latent issue in code that predates this commit:
+`pino-http`'s type declarations use ESM `export default` syntax over an
+actually-CommonJS runtime module, which NodeNext's stricter interop rejected —
+`import pinoHttp from "pino-http"` (working fine under the previous CommonJS
+resolution) started failing to typecheck. Fixed by switching to the named
+export, `import { pinoHttp } from "pino-http"`. The same class of issue hit
+`ioredis` two commits later (see step 8) and was fixed the same way.
 
 **Bug found and fixed:** `pg.Pool` emits `'error'` when an idle client's
 connection drops (e.g. a Postgres restart). With no listener, Node's default
