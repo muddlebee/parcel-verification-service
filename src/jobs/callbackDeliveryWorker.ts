@@ -43,7 +43,11 @@ export const callbackDeliveryWorker = new Worker<CallbackDeliveryJobData>(
       throw new Error(`Callback delivery got HTTP ${res.status}: ${await res.text()}`);
     }
   },
-  { connection: redisConnection },
+  {
+    connection: redisConnection,
+    // Parallel loopback POSTs when several delayed callbacks fire together.
+    concurrency: env.REGISTRY_DELIVERY_CONCURRENCY,
+  },
 );
 
 callbackDeliveryWorker.on("failed", (job, err) => {

@@ -77,7 +77,13 @@ export const registrySubmitWorker = new Worker<RegistrySubmitJobData>(
       await registryCallbackDeliveryQueue.add("deliver", payload, { delay: 3500 });
     }
   },
-  { connection: redisConnection },
+  {
+    connection: redisConnection,
+    // >1 so multiple partner calls await in parallel (I/O-bound). Tunable via
+    // REGISTRY_SUBMIT_CONCURRENCY. Keep lockDuration above partner timeout.
+    concurrency: env.REGISTRY_SUBMIT_CONCURRENCY,
+    lockDuration: env.REGISTRY_CALL_TIMEOUT_MS + 10_000,
+  },
 );
 
 function randomBetween(min: number, max: number): number {

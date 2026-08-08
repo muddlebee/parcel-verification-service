@@ -15,6 +15,11 @@ const EnvSchema = z.object({
   // Scaled way down here so a reviewer sees a timeout/retry cycle in
   // seconds, not minutes.
   REGISTRY_CALL_TIMEOUT_MS: z.coerce.number().int().positive().default(3_000),
+  // How many jobs each BullMQ worker may process in parallel (default was
+  // effectively 1). Submit is I/O-bound on the partner call — raising this
+  // overlaps wait time. Delivery is loopback HTTP and usually cheap.
+  REGISTRY_SUBMIT_CONCURRENCY: z.coerce.number().int().positive().default(5),
+  REGISTRY_DELIVERY_CONCURRENCY: z.coerce.number().int().positive().default(5),
 });
 
 const parsed = EnvSchema.safeParse(process.env);
