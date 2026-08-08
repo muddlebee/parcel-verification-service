@@ -4,11 +4,17 @@ import type { CallbackDeliveryJobData } from "./registryQueue.js";
 import { env } from "../config/env.js";
 import { logger } from "../logger.js";
 
-// Plays the part of the partner's own outbound webhook call — a genuine
-// HTTP POST back into this same service's public callback route, not an
-// in-process shortcut. That means the callback handler's idempotency
-// check, auth-free routing, and error handling all get exercised by real
-// traffic, including the deliberate double-delivery for "duplicate".
+// Consumer for registryCallbackDeliveryQueue ("registry-callback-delivery").
+//
+// Role: pretend to be the external registry partner calling us back.
+// Jobs are enqueued by registrySubmitWorker after a successful partner ack
+// (delayed 1–3s). We do NOT write parcel status ourselves — we HTTP POST
+// to POST /api/v1/callbacks/registry so the real callback route owns
+// idempotency + applyTransition(under_verification → verified|rejected).
+//
+// Why real HTTP (not an in-process function call): exercises the public
+// unauthenticated webhook path, validation, and duplicate handling exactly
+// as production traffic would — including the "duplicate" double-delivery.
 export const callbackDeliveryWorker = new Worker<CallbackDeliveryJobData>(
   "registry-callback-delivery",
   async (job: Job<CallbackDeliveryJobData>) => {

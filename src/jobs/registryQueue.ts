@@ -31,11 +31,15 @@ export interface CallbackDeliveryJobData {
   requestId: string;
 }
 
-// The inbound leg: "the partner is now telling us the result." Modeled as
-// its own delayed queue rather than a raw setTimeout inside the submit
-// worker specifically so it survives a process restart — a real partner's
-// callback doesn't care whether our process was up when it decided to
-// call, and a durable queue is the only way that's still true here.
+// Inbound leg: "the partner is now telling us the result."
+//
+// Producer: registrySubmitWorker (after partner ack) — delayed add().
+// Consumer: callbackDeliveryWorker — HTTP POSTs to /callbacks/registry.
+//
+// Separate delayed queue (not setTimeout in the submit worker) so it
+// survives process restarts; a real partner's webhook doesn't care if we
+// were up when they decided to call. Does not touch DB — only the callback
+// route does, via recordCallbackAndTransition.
 export const registryCallbackDeliveryQueue = new Queue<CallbackDeliveryJobData>("registry-callback-delivery", {
   connection: redisConnection,
 });

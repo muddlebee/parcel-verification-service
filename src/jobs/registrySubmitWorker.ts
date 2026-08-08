@@ -47,20 +47,30 @@ export const registrySubmitWorker = new Worker<RegistrySubmitJobData>(
     // idempotent code path — see callback.routes.ts).
     await db.updateTable("parcels").set({ registry_sync_status: "done" }).where("id", "=", parcelId).execute();
 
+    // --- registryCallbackDeliveryQueue (inbound leg) ---
+    // After the partner acks our submit, a real partner would later POST a
+    // webhook to us with verified/rejected. We don't have a real partner, so
+    // we enqueue a delayed job onto this queue; callbackDeliveryWorker then
+    // POSTs that payload to our own /callbacks/registry route over HTTP.
+    // Why a durable queue (not setTimeout): survives process restarts and
+    // matches "partner callback arrives whenever it wants."
+    // This worker only sets registry_sync_status; parcel.status flips only
+    // inside the callback handler.
     if (scenario === "verified" || scenario === "rejected") {
       await registryCallbackDeliveryQueue.add(
         "deliver",
         { parcelId, registryReferenceId, result: scenario, callbackId: randomUUID(), requestId },
-        { delay: Math.round(randomBetween(1000, 3000)) },
+        { delay: Math.round(randomBetween(1000, 3000)) }, // simulate partner thinking time
       );
     } else if (scenario === "duplicate") {
       // Same callback_id delivered twice, a few seconds apart — exactly
       // the "partner redelivers the same result" case the brief calls out.
+      // First delivery applies the transition; second is ignored (idempotency).
       const payload = {
         parcelId,
         registryReferenceId,
         result: "verified" as const,
-        callbackId: randomUUID(),
+        callbackId: randomUUID(), // same id on both jobs = redelivery, not two results
         requestId,
       };
       await registryCallbackDeliveryQueue.add("deliver", payload, { delay: 1500 });
