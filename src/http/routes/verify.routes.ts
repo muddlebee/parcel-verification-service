@@ -7,7 +7,7 @@ import { ErrorResponseSchema, ParcelIdParamSchema } from "../schemas/common.sche
 import { VerifyParcelRequestSchema, VerifyParcelResponseSchema } from "../schemas/registry.schemas.js";
 import { db } from "../../db/kysely.js";
 import { applyTransition } from "../../db/repositories/transitions.repository.js";
-import { registrySubmitQueue } from "../../registry/queues.js";
+import { submitQueue } from "../../registry/queues.js";
 import { pickRandomScenario } from "../../registry/stubPartnerClient.js";
 import { env } from "../../config/env.js";
 
@@ -65,7 +65,7 @@ verifyRouter.post("/parcels/:id/verify", apiKeyAuth, async (req, res) => {
   });
 
   const resolvedScenario = scenario ?? pickRandomScenario();
-  await registrySubmitQueue.add(
+  await submitQueue.add(
     "submit",
     { parcelId: id, registryReferenceId, scenario: resolvedScenario, requestId: req.id as string },
     {

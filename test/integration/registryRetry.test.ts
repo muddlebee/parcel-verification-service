@@ -5,8 +5,8 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { buildApp } from "../../src/http/app.js";
 import { env } from "../../src/config/env.js";
 import { db } from "../../src/db/kysely.js";
-import { registryCallbackDeliveryQueue, registrySubmitQueue } from "../../src/registry/queues.js";
-import { registrySubmitWorker } from "../../src/registry/submitWorker.js";
+import { callbackDeliveryQueue, submitQueue } from "../../src/registry/queues.js";
+import { submitWorker } from "../../src/registry/submitWorker.js";
 import { callbackDeliveryWorker } from "../../src/registry/callbackDeliveryWorker.js";
 import { redisConnection } from "../../src/jobs/redisConnection.js";
 
@@ -76,10 +76,10 @@ async function pollParcel(
 
 afterAll(async () => {
   await new Promise<void>((resolve) => server.close(() => resolve()));
-  await registrySubmitWorker.close();
+  await submitWorker.close();
   await callbackDeliveryWorker.close();
-  await registrySubmitQueue.close();
-  await registryCallbackDeliveryQueue.close();
+  await submitQueue.close();
+  await callbackDeliveryQueue.close();
   await redisConnection.quit();
   await db.destroy();
 });

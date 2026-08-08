@@ -2,7 +2,7 @@ import { Queue } from "bullmq";
 import { redisConnection } from "../jobs/redisConnection.js";
 import type { RegistryScenario } from "./stubPartnerClient.js";
 
-export interface RegistrySubmitJobData {
+export interface SubmitJobData {
   parcelId: string;
   registryReferenceId: string;
   scenario: RegistryScenario;
@@ -16,10 +16,11 @@ export interface RegistrySubmitJobData {
   requestId: string;
 }
 
-// The outbound leg: "call the partner and tell them about this parcel."
-// Retry/backoff is configured per-job at enqueue time (see verify.routes.ts)
-// so it can be tuned without touching this file.
-export const registrySubmitQueue = new Queue<RegistrySubmitJobData>("registry-submit", {
+// Outbound leg: "call the partner and tell them about this parcel."
+// Retry/backoff is configured per-job at enqueue time (see verify.routes.ts).
+// Redis queue name keeps a "registry-" prefix so keys stay identifiable if
+// other services share the same Redis.
+export const submitQueue = new Queue<SubmitJobData>("registry-submit", {
   connection: redisConnection,
 });
 
@@ -37,9 +38,8 @@ export interface CallbackDeliveryJobData {
 // Consumer: callbackDeliveryWorker — HTTP POSTs to /callbacks/registry.
 //
 // Separate delayed queue (not setTimeout in the submit worker) so it
-// survives process restarts; a real partner's webhook doesn't care if we
-// were up when they decided to call. Does not touch DB — only the callback
-// route does, via recordCallbackAndTransition.
-export const registryCallbackDeliveryQueue = new Queue<CallbackDeliveryJobData>("registry-callback-delivery", {
+// survives process restarts. Does not touch DB — only the callback route
+// does, via recordCallbackAndTransition.
+export const callbackDeliveryQueue = new Queue<CallbackDeliveryJobData>("registry-callback-delivery", {
   connection: redisConnection,
 });

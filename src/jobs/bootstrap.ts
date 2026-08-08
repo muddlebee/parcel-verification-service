@@ -11,4 +11,4 @@ import "../registry/submitWorker.js";
 import "../registry/callbackDeliveryWorker.js";
 import { logger } from "../logger.js";
 
-logger.info("background workers started (registry-submit, registry-callback-delivery)");
+logger.info("background workers started (submitWorker, callbackDeliveryWorker)");

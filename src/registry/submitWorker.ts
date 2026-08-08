@@ -1,7 +1,7 @@
 import { Worker, type Job } from "bullmq";
 import { randomUUID } from "crypto";
 import { redisConnection } from "../jobs/redisConnection.js";
-import { registryCallbackDeliveryQueue, type RegistrySubmitJobData } from "./queues.js";
+import { callbackDeliveryQueue, type SubmitJobData } from "./queues.js";
 import { submitToRegistry } from "./stubPartnerClient.js";
 import { db } from "../db/kysely.js";
 import { env } from "../config/env.js";
@@ -23,9 +23,9 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
   });
 }
 
-export const registrySubmitWorker = new Worker<RegistrySubmitJobData>(
+export const submitWorker = new Worker<SubmitJobData>(
   "registry-submit",
-  async (job: Job<RegistrySubmitJobData>) => {
+  async (job: Job<SubmitJobData>) => {
     const { parcelId, registryReferenceId, scenario, requestId } = job.data;
     const log = logger.child({
       parcelId,
@@ -47,7 +47,7 @@ export const registrySubmitWorker = new Worker<RegistrySubmitJobData>(
     // idempotent code path — see callback.routes.ts).
     await db.updateTable("parcels").set({ registry_sync_status: "done" }).where("id", "=", parcelId).execute();
 
-    // --- registryCallbackDeliveryQueue (inbound leg) ---
+    // --- callbackDeliveryQueue (inbound leg) ---
     // After the partner acks our submit, a real partner would later POST a
     // webhook to us with verified/rejected. We don't have a real partner, so
     // we enqueue a delayed job onto this queue; callbackDeliveryWorker then
@@ -57,7 +57,7 @@ export const registrySubmitWorker = new Worker<RegistrySubmitJobData>(
     // This worker only sets registry_sync_status; parcel.status flips only
     // inside the callback handler.
     if (scenario === "verified" || scenario === "rejected") {
-      await registryCallbackDeliveryQueue.add(
+      await callbackDeliveryQueue.add(
         "deliver",
         { parcelId, registryReferenceId, result: scenario, callbackId: randomUUID(), requestId },
         { delay: Math.round(randomBetween(1000, 3000)) }, // simulate partner thinking time
@@ -73,8 +73,8 @@ export const registrySubmitWorker = new Worker<RegistrySubmitJobData>(
         callbackId: randomUUID(), // same id on both jobs = redelivery, not two results
         requestId,
       };
-      await registryCallbackDeliveryQueue.add("deliver", payload, { delay: 1500 });
-      await registryCallbackDeliveryQueue.add("deliver", payload, { delay: 3500 });
+      await callbackDeliveryQueue.add("deliver", payload, { delay: 1500 });
+      await callbackDeliveryQueue.add("deliver", payload, { delay: 3500 });
     }
   },
   {
@@ -90,7 +90,7 @@ function randomBetween(min: number, max: number): number {
   return min + Math.random() * (max - min);
 }
 
-registrySubmitWorker.on("failed", (job: Job<RegistrySubmitJobData> | undefined, err: Error) => {
+submitWorker.on("failed", (job: Job<SubmitJobData> | undefined, err: Error) => {
   if (!job) return;
   const { parcelId, requestId } = job.data;
   const maxAttempts = job.opts.attempts ?? 1;

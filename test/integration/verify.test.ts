@@ -4,7 +4,7 @@ import { afterAll, describe, expect, it } from "vitest";
 import { buildApp } from "../../src/http/app.js";
 import { env } from "../../src/config/env.js";
 import { db } from "../../src/db/kysely.js";
-import { registryCallbackDeliveryQueue, registrySubmitQueue } from "../../src/registry/queues.js";
+import { callbackDeliveryQueue, submitQueue } from "../../src/registry/queues.js";
 import { redisConnection } from "../../src/jobs/redisConnection.js";
 
 const app = buildApp();
@@ -37,8 +37,8 @@ async function createParcel(): Promise<string> {
 }
 
 afterAll(async () => {
-  await registrySubmitQueue.close();
-  await registryCallbackDeliveryQueue.close();
+  await submitQueue.close();
+  await callbackDeliveryQueue.close();
   await redisConnection.quit();
   await db.destroy();
 });

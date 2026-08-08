@@ -4,7 +4,7 @@ import type { CallbackDeliveryJobData } from "./queues.js";
 import { env } from "../config/env.js";
 import { logger } from "../logger.js";
 
-// Consumer for registryCallbackDeliveryQueue ("registry-callback-delivery").
+// Consumer for callbackDeliveryQueue (BullMQ name: "registry-callback-delivery").
 //
 // Role: pretend to be the external registry partner calling us back.
 // Jobs are enqueued by submitWorker after a successful partner ack

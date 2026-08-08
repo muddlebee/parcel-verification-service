@@ -30,8 +30,8 @@ processes. When one job `await`s the partner, others can progress.
 
 | Layer | Behavior |
 | --- | --- |
-| `registry-submit` worker | Up to `REGISTRY_SUBMIT_CONCURRENCY` partner calls in flight |
-| `registry-callback-delivery` worker | Up to `REGISTRY_DELIVERY_CONCURRENCY` loopback POSTs in flight |
+| `submitWorker` (`registry-submit` queue) | Up to `REGISTRY_SUBMIT_CONCURRENCY` partner calls in flight |
+| `callbackDeliveryWorker` (`registry-callback-delivery` queue) | Up to `REGISTRY_DELIVERY_CONCURRENCY` loopback POSTs in flight |
 | The two workers vs each other | Independent — can run at the same time |
 | API / enqueue | Parallel — many `/verify` calls queue work in Redis |
 
