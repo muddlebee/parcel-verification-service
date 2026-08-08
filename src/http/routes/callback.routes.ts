@@ -45,7 +45,7 @@ callbackRouter.post("/callbacks/registry", async (req, res) => {
   });
 
   // x-debug-origin-request-id is only ever set by our own stub delivery
-  // worker (see callbackDeliveryWorker.ts) — a real partner wouldn't send
+  // worker (see registry/callbackDeliveryWorker.ts) — a real partner wouldn't send
   // it, and its absence is harmless (just undefined in the log).
   req.log.info(
     {

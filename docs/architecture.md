@@ -45,6 +45,10 @@ default 5 via `REGISTRY_SUBMIT_CONCURRENCY` / `REGISTRY_DELIVERY_CONCURRENCY`).
 See [`worker-concurrency.md`](./worker-concurrency.md) for a 5-parcel timing
 scenario (sequential ~10s vs parallel ~2s).
 
+Registry integration is collocated under `src/registry/` (stub partner client,
+queues, submit + callback-delivery workers). Generic job plumbing
+(`redisConnection`, process bootstrap) stays in `src/jobs/`.
+
 ## Schema (ERD)
 
 ```mermaid

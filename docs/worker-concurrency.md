@@ -5,8 +5,9 @@ How BullMQ `concurrency` affects the registry workers, with a worked scenario.
 Related code:
 
 - `REGISTRY_SUBMIT_CONCURRENCY` / `REGISTRY_DELIVERY_CONCURRENCY` in `src/config/env.ts` (default **5**)
-- `src/jobs/registrySubmitWorker.ts`
-- `src/jobs/callbackDeliveryWorker.ts`
+- `src/registry/submitWorker.ts`
+- `src/registry/callbackDeliveryWorker.ts`
+- Queues: `src/registry/queues.ts`
 
 For the two-queue design overall, see [`architecture.md`](./architecture.md).
 

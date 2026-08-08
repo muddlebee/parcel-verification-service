@@ -1,13 +1,13 @@
 import { Worker, type Job } from "bullmq";
-import { redisConnection } from "./redisConnection.js";
-import type { CallbackDeliveryJobData } from "./registryQueue.js";
+import { redisConnection } from "../jobs/redisConnection.js";
+import type { CallbackDeliveryJobData } from "./queues.js";
 import { env } from "../config/env.js";
 import { logger } from "../logger.js";
 
 // Consumer for registryCallbackDeliveryQueue ("registry-callback-delivery").
 //
 // Role: pretend to be the external registry partner calling us back.
-// Jobs are enqueued by registrySubmitWorker after a successful partner ack
+// Jobs are enqueued by submitWorker after a successful partner ack
 // (delayed 1–3s). We do NOT write parcel status ourselves — we HTTP POST
 // to POST /api/v1/callbacks/registry so the real callback route owns
 // idempotency + applyTransition(under_verification → verified|rejected).
@@ -15,6 +15,8 @@ import { logger } from "../logger.js";
 // Why real HTTP (not an in-process function call): exercises the public
 // unauthenticated webhook path, validation, and duplicate handling exactly
 // as production traffic would — including the "duplicate" double-delivery.
+//
+// With a real partner this file goes away; they POST the public callback route.
 export const callbackDeliveryWorker = new Worker<CallbackDeliveryJobData>(
   "registry-callback-delivery",
   async (job: Job<CallbackDeliveryJobData>) => {

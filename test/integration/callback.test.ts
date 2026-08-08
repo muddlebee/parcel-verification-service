@@ -4,7 +4,7 @@ import { afterAll, describe, expect, it } from "vitest";
 import { buildApp } from "../../src/http/app.js";
 import { env } from "../../src/config/env.js";
 import { db } from "../../src/db/kysely.js";
-import { registryCallbackDeliveryQueue, registrySubmitQueue } from "../../src/jobs/registryQueue.js";
+import { registryCallbackDeliveryQueue, registrySubmitQueue } from "../../src/registry/queues.js";
 import { redisConnection } from "../../src/jobs/redisConnection.js";
 
 // The verify endpoint sets registry_reference_id and moves the parcel to

@@ -1,8 +1,8 @@
 import { Worker, type Job } from "bullmq";
 import { randomUUID } from "crypto";
-import { redisConnection } from "./redisConnection.js";
-import { registryCallbackDeliveryQueue, type RegistrySubmitJobData } from "./registryQueue.js";
-import { submitToRegistry } from "../registry/stubPartnerClient.js";
+import { redisConnection } from "../jobs/redisConnection.js";
+import { registryCallbackDeliveryQueue, type RegistrySubmitJobData } from "./queues.js";
+import { submitToRegistry } from "./stubPartnerClient.js";
 import { db } from "../db/kysely.js";
 import { env } from "../config/env.js";
 import { logger } from "../logger.js";

@@ -117,8 +117,9 @@ something it's genuinely the right tool for. Rejected a plain
 `setTimeout` retry: doesn't survive a process restart, and "a partner outage
 must not lose a submission" requires durability.
 
-**The stub partner** (`src/registry/stubPartnerClient.ts`) is the one file a
-real integration would replace. Two-job design — submit, then a *genuine HTTP
+**The stub partner** (`src/registry/stubPartnerClient.ts`) is the main file a
+real integration would replace (alongside the stub callback-delivery worker
+in the same `src/registry/` module). Two-job design — submit, then a *genuine HTTP
 POST* back into this service's own callback route on a delay — so the
 callback handler's idempotency and auth-free routing get exercised by real
 traffic, including deliberate double-delivery for `"duplicate"`. `scenario`

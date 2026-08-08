@@ -40,7 +40,7 @@ export interface SubmitToRegistryParams {
 // waiting, not that this function announced one — so "timeout" here just
 // means "take much longer than the caller's own timeout budget," and it's
 // the caller (the worker, via Promise.race) that actually produces the
-// timeout condition. See registrySubmitWorker.ts.
+// timeout condition. See submitWorker.ts.
 export async function submitToRegistry(params: SubmitToRegistryParams): Promise<{ acknowledged: true }> {
   if (params.scenario === "timeout") {
     await sleep(params.timeoutMs * 3);

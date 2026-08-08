@@ -5,9 +5,9 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { buildApp } from "../../src/http/app.js";
 import { env } from "../../src/config/env.js";
 import { db } from "../../src/db/kysely.js";
-import { registryCallbackDeliveryQueue, registrySubmitQueue } from "../../src/jobs/registryQueue.js";
-import { registrySubmitWorker } from "../../src/jobs/registrySubmitWorker.js";
-import { callbackDeliveryWorker } from "../../src/jobs/callbackDeliveryWorker.js";
+import { registryCallbackDeliveryQueue, registrySubmitQueue } from "../../src/registry/queues.js";
+import { registrySubmitWorker } from "../../src/registry/submitWorker.js";
+import { callbackDeliveryWorker } from "../../src/registry/callbackDeliveryWorker.js";
 import { redisConnection } from "../../src/jobs/redisConnection.js";
 
 // Unlike the other integration test files, this one imports the actual

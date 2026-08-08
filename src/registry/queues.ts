@@ -1,6 +1,6 @@
 import { Queue } from "bullmq";
-import { redisConnection } from "./redisConnection.js";
-import type { RegistryScenario } from "../registry/stubPartnerClient.js";
+import { redisConnection } from "../jobs/redisConnection.js";
+import type { RegistryScenario } from "./stubPartnerClient.js";
 
 export interface RegistrySubmitJobData {
   parcelId: string;
@@ -33,7 +33,7 @@ export interface CallbackDeliveryJobData {
 
 // Inbound leg: "the partner is now telling us the result."
 //
-// Producer: registrySubmitWorker (after partner ack) — delayed add().
+// Producer: submitWorker (after partner ack) — delayed add().
 // Consumer: callbackDeliveryWorker — HTTP POSTs to /callbacks/registry.
 //
 // Separate delayed queue (not setTimeout in the submit worker) so it
