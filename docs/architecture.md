@@ -2,7 +2,8 @@
 
 Diagrams render natively on GitHub. This is a reference — for the "what was built,
 in what order, and why" narrative, see `docs/IMPLEMENTATION_LOG.md`. For the
-API-design and tradeoff reasoning, see the root `README.md`.
+API-design and tradeoff reasoning, see the root `README.md`. Worker parallelism
+and a worked concurrency scenario: [`worker-concurrency.md`](./worker-concurrency.md).
 
 ## System overview
 
@@ -38,6 +39,11 @@ Everything runs in one process (API + both workers) — the brief rules out
 Kubernetes and the time budget didn't call for the added complexity of splitting
 them. Each worker is already a standalone `BullMQ.Worker` instance, so moving one
 to its own process/container later is an entrypoint change, not a redesign.
+
+Within each queue, workers process multiple jobs in parallel (`concurrency`
+default 5 via `REGISTRY_SUBMIT_CONCURRENCY` / `REGISTRY_DELIVERY_CONCURRENCY`).
+See [`worker-concurrency.md`](./worker-concurrency.md) for a 5-parcel timing
+scenario (sequential ~10s vs parallel ~2s).
 
 ## Schema (ERD)
 

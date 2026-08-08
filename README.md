@@ -4,8 +4,9 @@ Accepts a land parcel for verification, moves it through a multi-stage
 pipeline involving an external land-registry partner, and keeps a defensible
 record of every state change.
 
-Diagrams: [`docs/architecture.md`](docs/architecture.md). Commit-by-commit
-build narrative: [`docs/IMPLEMENTATION_LOG.md`](docs/IMPLEMENTATION_LOG.md).
+Diagrams: [`docs/architecture.md`](docs/architecture.md). Worker concurrency
+scenario: [`docs/worker-concurrency.md`](docs/worker-concurrency.md).
+Commit-by-commit build narrative: [`docs/IMPLEMENTATION_LOG.md`](docs/IMPLEMENTATION_LOG.md).
 Static Swagger docs (no backend behind it, just for browsing):
 **https://docs-site-eta-ten.vercel.app**.
 
