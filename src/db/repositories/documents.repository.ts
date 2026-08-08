@@ -17,17 +17,42 @@ export interface CreateDocumentInput {
   storagePath: string | null;
 }
 
+function toInsertValues(input: CreateDocumentInput) {
+  return {
+    parcel_id: input.parcelId,
+    document_type: input.documentType,
+    original_file_name: input.originalFileName,
+    content_type: input.contentType,
+    size_bytes: input.sizeBytes,
+    storage_path: input.storagePath,
+  };
+}
+
 export async function createDocument(input: CreateDocumentInput): Promise<Selectable<DocumentsTable>> {
   return db
     .insertInto("documents")
-    .values({
-      parcel_id: input.parcelId,
-      document_type: input.documentType,
-      original_file_name: input.originalFileName,
-      content_type: input.contentType,
-      size_bytes: input.sizeBytes,
-      storage_path: input.storagePath,
-    })
+    .values(toInsertValues(input))
     .returningAll()
     .executeTakeFirstOrThrow();
+}
+
+/** Insert one or more document rows in a single transaction (batch attach). */
+export async function createDocuments(inputs: CreateDocumentInput[]): Promise<Selectable<DocumentsTable>[]> {
+  if (inputs.length === 0) return [];
+  if (inputs.length === 1) {
+    return [await createDocument(inputs[0]!)];
+  }
+
+  return db.transaction().execute(async (trx) => {
+    const rows: Selectable<DocumentsTable>[] = [];
+    for (const input of inputs) {
+      const row = await trx
+        .insertInto("documents")
+        .values(toInsertValues(input))
+        .returningAll()
+        .executeTakeFirstOrThrow();
+      rows.push(row);
+    }
+    return rows;
+  });
 }

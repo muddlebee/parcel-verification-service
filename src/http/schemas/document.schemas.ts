@@ -1,4 +1,6 @@
 import { z } from "zod";
+import { registry } from "../openapi/registry.js";
+import { DocumentSchema } from "./parcel.schemas.js";
 
 export const DOCUMENT_TYPES = [
   "sale_deed",
@@ -8,12 +10,25 @@ export const DOCUMENT_TYPES = [
   "other",
 ] as const;
 
+export type DocumentType = (typeof DOCUMENT_TYPES)[number];
+
+/** Max documents per POST .../documents/batch (ops-sized; caps memory). */
+export const DOCUMENTS_BATCH_MAX = 10;
+
 // Multer parses the multipart body into req.file (binary) + req.body (text
 // fields). Only the text field is zod's job — the file itself is validated
 // separately (size/mimetype) in multer's own config.
 export const AttachDocumentFieldsSchema = z.object({
   document_type: z.enum(DOCUMENT_TYPES),
 });
+
+export const BatchDocumentsResponseSchema = registry.register(
+  "BatchDocumentsResponse",
+  z.object({
+    data: z.array(DocumentSchema),
+    count: z.number().int(),
+  }),
+);
 
 export const ALLOWED_DOCUMENT_MIME_TYPES = ["image/jpeg", "image/png", "application/pdf"] as const;
 export const MAX_DOCUMENT_SIZE_BYTES = 10 * 1024 * 1024; // 10MB

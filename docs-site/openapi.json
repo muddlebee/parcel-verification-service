@@ -3,7 +3,7 @@
   "info": {
     "title": "Parcel Verification Service",
     "version": "1.0.0",
-    "description": "BhoomiPe Parcel Verification Service — accepts a land parcel for verification, moves it through a state machine involving an external registry partner, and keeps a full audit trail of every state change."
+    "description": "BhoomiPe Parcel Verification Service — accepts a land parcel for verification, moves it through a state machine involving an external registry partner, and keeps a full audit trail of every state change.\n\n**Documents:** single attach takes a file picker plus a `document_type` dropdown, and the file is optional (omit it to record metadata only). Batch attach has one file picker per document type — upload each file under the field named after its type, in any combination; the field name is what classifies the document."
   },
   "servers": [
     {
@@ -609,6 +609,24 @@
           "status",
           "uptime_seconds"
         ]
+      },
+      "BatchDocumentsResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Document"
+            }
+          },
+          "count": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "data",
+          "count"
+        ]
       }
     },
     "parameters": {}
@@ -620,6 +638,11 @@
           "Health"
         ],
         "summary": "Liveness/readiness probe for a container orchestrator.",
+        "servers": [
+          {
+            "url": "/"
+          }
+        ],
         "responses": {
           "200": {
             "description": "Service is up and can reach Postgres and Redis.",
@@ -821,7 +844,7 @@
         "tags": [
           "Documents"
         ],
-        "summary": "Attach a document to a parcel (metadata + local disk storage, no real object store).",
+        "summary": "Attach a document to a parcel. File is optional — omit or send empty to record metadata only (local disk when bytes are present).",
         "security": [
           {
             "ApiKeyAuth": []
@@ -847,7 +870,8 @@
                 "properties": {
                   "file": {
                     "type": "string",
-                    "format": "binary"
+                    "format": "binary",
+                    "description": "Optional PDF/PNG/JPEG (max 10MB). Omit or empty for metadata-only."
                   },
                   "document_type": {
                     "type": "string",
@@ -857,7 +881,9 @@
                       "encumbrance_certificate",
                       "owner_id_proof",
                       "other"
-                    ]
+                    ],
+                    "description": "Document classification.",
+                    "example": "sale_deed"
                   }
                 },
                 "required": [
@@ -879,7 +905,120 @@
             }
           },
           "400": {
-            "description": "Missing file, bad document_type, or unsupported content type.",
+            "description": "Bad document_type, or file content doesn't match declared mime type.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No parcel with that id.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/parcels/{id}/documents/batch": {
+      "post": {
+        "tags": [
+          "Documents"
+        ],
+        "summary": "Attach multiple documents in one request (all-or-nothing). Upload each file under the field named after its document type; max 10 files total. For a metadata-only record, use the single attach endpoint.",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "example": "b3f1c2a4-1234-4a9b-8b1e-000000000001"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "sale_deed": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "format": "binary"
+                    },
+                    "maxItems": 10,
+                    "description": "Files to file as 'sale_deed'. PDF/PNG/JPEG, max 10MB each."
+                  },
+                  "record_of_rights": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "format": "binary"
+                    },
+                    "maxItems": 10,
+                    "description": "Files to file as 'record_of_rights'. PDF/PNG/JPEG, max 10MB each."
+                  },
+                  "encumbrance_certificate": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "format": "binary"
+                    },
+                    "maxItems": 10,
+                    "description": "Files to file as 'encumbrance_certificate'. PDF/PNG/JPEG, max 10MB each."
+                  },
+                  "owner_id_proof": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "format": "binary"
+                    },
+                    "maxItems": 10,
+                    "description": "Files to file as 'owner_id_proof'. PDF/PNG/JPEG, max 10MB each."
+                  },
+                  "other": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "format": "binary"
+                    },
+                    "maxItems": 10,
+                    "description": "Files to file as 'other'. PDF/PNG/JPEG, max 10MB each."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "All documents attached.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BatchDocumentsResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "No files attached, more than 10 files, unknown field name, or a file whose content doesn't match its declared mime type.",
             "content": {
               "application/json": {
                 "schema": {

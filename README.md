@@ -60,17 +60,43 @@ than starting with it.
 | `POST` | `/api/v1/parcels` | API key | Submit a parcel |
 | `GET` | `/api/v1/parcels/:id` | API key | Parcel + owner + documents + history |
 | `GET` | `/api/v1/parcels` | API key | List, filter by `status`/`district`, paginated |
-| `POST` | `/api/v1/parcels/:id/documents` | API key | Attach a document |
+| `POST` | `/api/v1/parcels/:id/documents` | API key | Attach one document (file optional) |
+| `POST` | `/api/v1/parcels/:id/documents/batch` | API key | Attach up to 10 documents (all-or-nothing) |
 | `POST` | `/api/v1/parcels/:id/verify` | API key | Trigger the async registry call |
 | `POST` | `/api/v1/parcels/:id/transitions` | API key | Manual ops transition (`verified`↔`disputed`) |
 | `POST` | `/api/v1/callbacks/registry` | **none** | Partner delivers a result — see §3, §6 |
+
+**Documents:** single attach is the default, and its file is optional (omit it
+to record metadata only). Batch is a **separate** endpoint
+(`.../documents/batch`) so the single route stays simple for Swagger/clients.
+
+Batch names each multipart field after the **document type** it holds, rather
+than pairing a `files` array with a parallel `document_types` array by index:
+
+```bash
+curl -X POST .../parcels/$ID/documents/batch -H "X-API-Key: $KEY" \
+  -F sale_deed=@deed.pdf \
+  -F owner_id_proof=@aadhaar.png \
+  -F other=@survey.pdf
+```
+
+Index pairing looked fine on the wire but had no way to *detect* a mis-pairing:
+a browser's multi-file picker returns parts in its own order, so uploading the
+files in a different order than the types were listed files each document under
+the wrong type and still returns `201`. Naming the field after the type makes
+the classification structural — there is no ordering left to get wrong — and it
+renders in Swagger as one labelled picker per type instead of a free-text JSON
+box. Multiple files per type are allowed; up to 10 files total; failures are
+all-or-nothing (no half-applied set). Batch requires at least one file — bulk
+metadata-only has no real use case, and the single endpoint already covers it.
+Not required by the brief — convenience for multi-file ops upload.
 
 **Deliberately not exposed:** `PATCH`/`DELETE /parcels/:id` (owner/khata data
 anchors a title chain — no silent rewrites outside the audit trail; no
 "unsubmit," the record is meant to be permanent); a document-download route
 (out of scope, ops has direct volume access); a raw override for a stuck
 `registry_sync_status` (should be a domain action, not a field editor — see
-§4); bulk endpoints (each item needs its own audit semantics, not asked for).
+§4); cross-parcel bulk APIs.
 
 ## 3. Design decisions
 

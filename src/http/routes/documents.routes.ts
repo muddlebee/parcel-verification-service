@@ -1,32 +1,54 @@
-import { randomUUID } from "crypto";
-import { mkdir, writeFile } from "fs/promises";
-import path from "path";
 import { Router } from "express";
 import { z } from "zod";
 import { registry } from "../openapi/registry.js";
 import { apiKeyAuth } from "../middleware/apiKeyAuth.js";
-import { upload } from "../middleware/upload.js";
+import { uploadBatchDocuments, uploadSingleDocument } from "../middleware/upload.js";
 import { ApiError } from "../middleware/errorHandler.js";
 import { ErrorResponseSchema, ParcelIdParamSchema } from "../schemas/common.schemas.js";
 import {
   AttachDocumentFieldsSchema,
+  BatchDocumentsResponseSchema,
   DOCUMENT_TYPES,
-  matchesDeclaredMimeType,
-  MIME_TYPE_EXTENSIONS,
+  DOCUMENTS_BATCH_MAX,
+  type DocumentType,
 } from "../schemas/document.schemas.js";
 import { DocumentSchema } from "../schemas/parcel.schemas.js";
-import { createDocument, parcelExists } from "../../db/repositories/documents.repository.js";
+import { parcelExists } from "../../db/repositories/documents.repository.js";
 import { toDocument } from "../mappers/parcel.mapper.js";
-import { env } from "../../config/env.js";
+import { persistDocuments, prepareDocumentItem } from "../services/attachDocument.js";
 
 export const documentsRouter = Router();
 
 // file is optional: brief allows metadata-only attach; Swagger "send empty
 // value" and clients that omit the binary both hit that path.
 const AttachDocumentMultipartSchema = z.object({
-  file: z.any().optional().openapi({ type: "string", format: "binary" }),
-  document_type: z.enum(DOCUMENT_TYPES),
+  file: z.any().optional().openapi({
+    type: "string",
+    format: "binary",
+    description: "Optional PDF/PNG/JPEG (max 10MB). Omit or empty for metadata-only.",
+  }),
+  document_type: z
+    .enum(DOCUMENT_TYPES)
+    .openapi({ description: "Document classification.", example: "sale_deed" }),
 });
+
+// One multipart field per document type rather than a `files` array paired by
+// index with a parallel `document_types` array. Swagger UI renders this as one
+// labelled file picker per type, so the classification is structural — there is
+// no ordering for the operator (or the browser) to get wrong.
+const batchFileField = (documentType: DocumentType) =>
+  z
+    .array(z.any().openapi({ type: "string", format: "binary" }))
+    .max(DOCUMENTS_BATCH_MAX)
+    .optional()
+    .openapi({ description: `Files to file as '${documentType}'. PDF/PNG/JPEG, max 10MB each.` });
+
+const BatchDocumentsMultipartSchema = z.object(
+  Object.fromEntries(DOCUMENT_TYPES.map((t) => [t, batchFileField(t)])) as Record<
+    DocumentType,
+    ReturnType<typeof batchFileField>
+  >,
+);
 
 registry.registerPath({
   method: "post",
@@ -48,21 +70,58 @@ registry.registerPath({
     404: { description: "No parcel with that id.", content: { "application/json": { schema: ErrorResponseSchema } } },
   },
 });
+
+// Register /batch before the collection POST is not required by Express path
+// matching (different paths), but keeps the batch surface obvious in the file.
+registry.registerPath({
+  method: "post",
+  path: "/parcels/{id}/documents/batch",
+  tags: ["Documents"],
+  summary:
+    "Attach multiple documents in one request (all-or-nothing). Upload each file under the field named " +
+    "after its document type; max " +
+    String(DOCUMENTS_BATCH_MAX) +
+    " files total. For a metadata-only record, use the single attach endpoint.",
+  security: [{ ApiKeyAuth: [] }],
+  request: {
+    params: ParcelIdParamSchema,
+    body: { content: { "multipart/form-data": { schema: BatchDocumentsMultipartSchema } } },
+  },
+  responses: {
+    201: {
+      description: "All documents attached.",
+      content: { "application/json": { schema: BatchDocumentsResponseSchema } },
+    },
+    400: {
+      description:
+        "No files attached, more than " +
+        String(DOCUMENTS_BATCH_MAX) +
+        " files, unknown field name, or a file whose content doesn't match its declared mime type.",
+      content: { "application/json": { schema: ErrorResponseSchema } },
+    },
+    404: { description: "No parcel with that id.", content: { "application/json": { schema: ErrorResponseSchema } } },
+  },
+});
+
 // Not restricted to a particular parcel status — ops may attach a document
 // supporting a dispute after a parcel is already verified, for example.
 // Attaching a document is not itself a state-machine transition.
-documentsRouter.post("/parcels/:id/documents", apiKeyAuth, upload.single("file"), async (req, res) => {
+documentsRouter.post("/parcels/:id/documents/batch", apiKeyAuth, uploadBatchDocuments, async (req, res) => {
   const { id } = ParcelIdParamSchema.parse(req.params);
-  const { document_type } = AttachDocumentFieldsSchema.parse(req.body);
+  const filesByType = (req.files ?? {}) as Partial<Record<DocumentType, Express.Multer.File[]>>;
 
-  // Swagger "send empty value" may omit the part or send a 0-byte upload.
-  const file = req.file && req.file.size > 0 ? req.file : undefined;
+  // Walk DOCUMENT_TYPES rather than the request's field order so the response
+  // ordering is stable regardless of how the client laid out the multipart body.
+  // Over-max and unknown field names never reach here — multer rejects both.
+  const items = DOCUMENT_TYPES.flatMap((documentType) =>
+    (filesByType[documentType] ?? []).map((file) => ({ documentType, file })),
+  );
 
-  if (file && !matchesDeclaredMimeType(file.buffer, file.mimetype)) {
+  if (items.length === 0) {
     throw new ApiError(
       400,
-      "UNSUPPORTED_MEDIA_TYPE",
-      `File content doesn't match declared type '${file.mimetype}'.`,
+      "BATCH_EMPTY",
+      `Attach at least one file under a document-type field (${DOCUMENT_TYPES.join(", ")}).`,
     );
   }
 
@@ -70,36 +129,43 @@ documentsRouter.post("/parcels/:id/documents", apiKeyAuth, upload.single("file")
     throw new ApiError(404, "PARCEL_NOT_FOUND", `No parcel with id '${id}'.`);
   }
 
-  let storagePath: string | null = null;
-  if (file) {
-    const extension = MIME_TYPE_EXTENSIONS[file.mimetype as keyof typeof MIME_TYPE_EXTENSIONS] ?? "";
-    // Generated server-side, never derived from the client-supplied file
-    // name — that name is only ever stored as a display string, never used
-    // to build a filesystem path (path traversal / collision prevention).
-    storagePath = path.join(env.UPLOAD_DIR, id, `${randomUUID()}${extension}`);
-    await mkdir(path.dirname(storagePath), { recursive: true });
-    await writeFile(storagePath, file.buffer);
+  // Validate all items first (prepare throws on bad mime) — no disk/DB yet.
+  const prepared = items.map(({ file, documentType }) => prepareDocumentItem(file, documentType));
+
+  const rows = await persistDocuments(id, prepared);
+
+  req.log.info(
+    { parcelId: id, count: rows.length, documentIds: rows.map((r) => r.id) },
+    "documents batch attached",
+  );
+
+  res.status(201).json({
+    data: rows.map(toDocument),
+    count: rows.length,
+  });
+});
+
+documentsRouter.post("/parcels/:id/documents", apiKeyAuth, uploadSingleDocument, async (req, res) => {
+  const { id } = ParcelIdParamSchema.parse(req.params);
+  const { document_type } = AttachDocumentFieldsSchema.parse(req.body);
+
+  if (!(await parcelExists(id))) {
+    throw new ApiError(404, "PARCEL_NOT_FOUND", `No parcel with id '${id}'.`);
   }
 
-  const document = await createDocument({
-    parcelId: id,
-    documentType: document_type,
-    originalFileName: file?.originalname ?? "",
-    contentType: file?.mimetype ?? "application/octet-stream",
-    sizeBytes: file?.size ?? 0,
-    storagePath,
-  });
+  const prepared = prepareDocumentItem(req.file, document_type);
+  const [document] = await persistDocuments(id, [prepared]);
 
   req.log.info(
     {
       parcelId: id,
-      documentId: document.id,
+      documentId: document!.id,
       documentType: document_type,
-      sizeBytes: document.size_bytes,
-      metadataOnly: storagePath === null,
+      sizeBytes: document!.size_bytes,
+      metadataOnly: document!.storage_path === null,
     },
     "document attached",
   );
 
-  res.status(201).json(toDocument(document));
+  res.status(201).json(toDocument(document!));
 });

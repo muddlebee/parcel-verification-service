@@ -140,3 +140,135 @@ describe("POST /api/v1/parcels/:id/documents", () => {
     expect(existsSync(`${env.UPLOAD_DIR}/${missingId}`)).toBe(false);
   });
 });
+
+describe("POST /api/v1/parcels/:id/documents/batch", () => {
+  let parcelId: string;
+
+  beforeAll(async () => {
+    parcelId = await createParcel();
+  });
+
+  afterAll(() => {
+    if (existsSync(`${env.UPLOAD_DIR}/${parcelId}`)) {
+      rmSync(`${env.UPLOAD_DIR}/${parcelId}`, { recursive: true, force: true });
+    }
+  });
+
+  it("files each upload under the document type named by its field", async () => {
+    const before = await request(app).get(`/api/v1/parcels/${parcelId}`).set(authHeader);
+    const beforeCount = before.body.documents.length as number;
+
+    const res = await request(app)
+      .post(`/api/v1/parcels/${parcelId}/documents/batch`)
+      .set(authHeader)
+      .attach("sale_deed", FAKE_PDF, { filename: "deed.pdf", contentType: "application/pdf" })
+      .attach("owner_id_proof", FAKE_PDF, { filename: "id.pdf", contentType: "application/pdf" });
+
+    expect(res.status).toBe(201);
+    expect(res.body.count).toBe(2);
+    expect(res.body.data).toHaveLength(2);
+    expect(res.body.data[0]).toMatchObject({
+      document_type: "sale_deed",
+      original_file_name: "deed.pdf",
+      size_bytes: FAKE_PDF.length,
+    });
+    expect(res.body.data[1]).toMatchObject({
+      document_type: "owner_id_proof",
+      original_file_name: "id.pdf",
+    });
+
+    const detail = await request(app).get(`/api/v1/parcels/${parcelId}`).set(authHeader);
+    expect(detail.body.documents.length).toBe(beforeCount + 2);
+  });
+
+  it("accepts several files under the same document type", async () => {
+    const res = await request(app)
+      .post(`/api/v1/parcels/${parcelId}/documents/batch`)
+      .set(authHeader)
+      .attach("other", FAKE_PDF, { filename: "a.pdf", contentType: "application/pdf" })
+      .attach("other", FAKE_PDF, { filename: "b.pdf", contentType: "application/pdf" });
+
+    expect(res.status).toBe(201);
+    expect(res.body.count).toBe(2);
+    expect(res.body.data.every((d: { document_type: string }) => d.document_type === "other")).toBe(true);
+    expect(res.body.data.map((d: { original_file_name: string }) => d.original_file_name)).toEqual([
+      "a.pdf",
+      "b.pdf",
+    ]);
+  });
+
+  // Field order in the request must not change how documents are classified —
+  // that was the whole failure mode of the index-paired design.
+  it("classifies by field name regardless of the order fields arrive in", async () => {
+    const res = await request(app)
+      .post(`/api/v1/parcels/${parcelId}/documents/batch`)
+      .set(authHeader)
+      .attach("owner_id_proof", FAKE_PDF, { filename: "aadhaar.pdf", contentType: "application/pdf" })
+      .attach("sale_deed", FAKE_PDF, { filename: "sale.pdf", contentType: "application/pdf" });
+
+    expect(res.status).toBe(201);
+    const byName = Object.fromEntries(
+      res.body.data.map((d: { original_file_name: string; document_type: string }) => [
+        d.original_file_name,
+        d.document_type,
+      ]),
+    );
+    expect(byName).toEqual({ "aadhaar.pdf": "owner_id_proof", "sale.pdf": "sale_deed" });
+  });
+
+  it("rejects a batch with no files at all", async () => {
+    const res = await request(app).post(`/api/v1/parcels/${parcelId}/documents/batch`).set(authHeader);
+
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe("BATCH_EMPTY");
+  });
+
+  it("rejects a field name that isn't a document type", async () => {
+    const res = await request(app)
+      .post(`/api/v1/parcels/${parcelId}/documents/batch`)
+      .set(authHeader)
+      .attach("files", FAKE_PDF, { filename: "deed.pdf", contentType: "application/pdf" });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe("UPLOAD_LIMIT_UNEXPECTED_FILE");
+  });
+
+  it("rejects more than max files across all fields", async () => {
+    let req = request(app).post(`/api/v1/parcels/${parcelId}/documents/batch`).set(authHeader);
+    for (let i = 0; i < 11; i++) {
+      req = req.attach("other", FAKE_PDF, { filename: `f${i}.pdf`, contentType: "application/pdf" });
+    }
+
+    const res = await req;
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe("UPLOAD_LIMIT_FILE_COUNT");
+  });
+
+  it("rejects the whole batch when one file has bad mime (no partial apply)", async () => {
+    const before = await request(app).get(`/api/v1/parcels/${parcelId}`).set(authHeader);
+    const beforeCount = before.body.documents.length as number;
+
+    const res = await request(app)
+      .post(`/api/v1/parcels/${parcelId}/documents/batch`)
+      .set(authHeader)
+      .attach("sale_deed", FAKE_PDF, { filename: "ok.pdf", contentType: "application/pdf" })
+      .attach("other", FAKE_TEXT, { filename: "bad.pdf", contentType: "application/pdf" });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe("UNSUPPORTED_MEDIA_TYPE");
+
+    const after = await request(app).get(`/api/v1/parcels/${parcelId}`).set(authHeader);
+    expect(after.body.documents.length).toBe(beforeCount);
+  });
+
+  it("returns 404 for an unknown parcel", async () => {
+    const missingId = randomUUID();
+    const res = await request(app)
+      .post(`/api/v1/parcels/${missingId}/documents/batch`)
+      .set(authHeader)
+      .attach("sale_deed", FAKE_PDF, { filename: "deed.pdf", contentType: "application/pdf" });
+
+    expect(res.status).toBe(404);
+    expect(existsSync(`${env.UPLOAD_DIR}/${missingId}`)).toBe(false);
+  });
+});
