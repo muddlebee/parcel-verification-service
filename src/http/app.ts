@@ -33,22 +33,23 @@ export function buildApp() {
   app.use(healthRouter);
   const openApiDocument = buildOpenApiDocument();
   app.get("/openapi.json", (_req, res) => res.json(openApiDocument));
-  // Auto-attaches X-API-Key to every "Try it out" call so the manual
-  // Authorize step isn't needed. Safe here specifically because this
-  // service has no real production deployment (out of scope per the
-  // brief) and the key is already a plaintext dev default checked into
-  // docker-compose.yml/.env.example — this is convenience, not a new
-  // exposure. Would need to be gated or removed if this pattern were ever
-  // reused for a service that actually goes to production.
+  // Pre-fills the ApiKeyAuth scheme so the manual Authorize step isn't
+  // needed for "Try it out". Must be plain data, not a function:
+  // swagger-ui-express serialises these options into a browser script via
+  // Function.prototype.toString(), so a callback referencing anything from
+  // this module's scope (e.g. `env`) becomes a ReferenceError in the page.
+  // Safe here specifically because this service has no real production
+  // deployment (out of scope per the brief) and the key is already a
+  // plaintext dev default checked into docker-compose.yml/.env.example —
+  // this is convenience, not a new exposure. Would need to be gated or
+  // removed if this pattern were ever reused for a service that actually
+  // goes to production.
   app.use(
     "/docs",
     swaggerUi.serve,
     swaggerUi.setup(openApiDocument, {
       swaggerOptions: {
-        requestInterceptor: (req: { headers: Record<string, string> }) => {
-          req.headers["X-API-Key"] = env.API_KEY;
-          return req;
-        },
+        preauthorizeApiKey: { authDefinitionKey: "ApiKeyAuth", apiKeyValue: env.API_KEY },
       },
     }),
   );
