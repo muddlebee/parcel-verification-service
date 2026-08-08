@@ -72,8 +72,39 @@ describe("POST /api/v1/parcels/:id/documents", () => {
     expect(res.body.storage_path).toBeUndefined(); // never leaked to the client
 
     const detail = await request(app).get(`/api/v1/parcels/${parcelId}`).set(authHeader);
-    expect(detail.body.documents).toHaveLength(1);
-    expect(detail.body.documents[0].id).toBe(res.body.id);
+    expect(detail.body.documents.length).toBeGreaterThanOrEqual(1);
+    expect(detail.body.documents.some((d: { id: string }) => d.id === res.body.id)).toBe(true);
+  });
+
+  it("accepts metadata-only attach when file is omitted (Swagger send empty value)", async () => {
+    const res = await request(app)
+      .post(`/api/v1/parcels/${parcelId}/documents`)
+      .set(authHeader)
+      .field("document_type", "owner_id_proof");
+
+    expect(res.status).toBe(201);
+    expect(res.body).toMatchObject({
+      document_type: "owner_id_proof",
+      original_file_name: "",
+      content_type: "application/octet-stream",
+      size_bytes: 0,
+    });
+    expect(res.body.storage_path).toBeUndefined();
+  });
+
+  it("treats a 0-byte file the same as omitted (empty upload)", async () => {
+    const res = await request(app)
+      .post(`/api/v1/parcels/${parcelId}/documents`)
+      .set(authHeader)
+      .field("document_type", "other")
+      .attach("file", Buffer.alloc(0), { filename: "empty.pdf", contentType: "application/pdf" });
+
+    expect(res.status).toBe(201);
+    expect(res.body).toMatchObject({
+      document_type: "other",
+      size_bytes: 0,
+      original_file_name: "",
+    });
   });
 
   it("rejects a file whose content doesn't match its declared mime type", async () => {

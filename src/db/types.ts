@@ -40,7 +40,8 @@ export interface DocumentsTable {
   original_file_name: string;
   content_type: string;
   size_bytes: number;
-  storage_path: string;
+  // Null when attach is metadata-only (no file bytes / Swagger empty value).
+  storage_path: string | null;
   uploaded_at: CreatedAt;
 }
 

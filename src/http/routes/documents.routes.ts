@@ -21,8 +21,10 @@ import { env } from "../../config/env.js";
 
 export const documentsRouter = Router();
 
+// file is optional: brief allows metadata-only attach; Swagger "send empty
+// value" and clients that omit the binary both hit that path.
 const AttachDocumentMultipartSchema = z.object({
-  file: z.any().openapi({ type: "string", format: "binary" }),
+  file: z.any().optional().openapi({ type: "string", format: "binary" }),
   document_type: z.enum(DOCUMENT_TYPES),
 });
 
@@ -30,7 +32,8 @@ registry.registerPath({
   method: "post",
   path: "/parcels/{id}/documents",
   tags: ["Documents"],
-  summary: "Attach a document to a parcel (metadata + local disk storage, no real object store).",
+  summary:
+    "Attach a document to a parcel. File is optional — omit or send empty to record metadata only (local disk when bytes are present).",
   security: [{ ApiKeyAuth: [] }],
   request: {
     params: ParcelIdParamSchema,
@@ -39,7 +42,7 @@ registry.registerPath({
   responses: {
     201: { description: "Attached.", content: { "application/json": { schema: DocumentSchema } } },
     400: {
-      description: "Missing file, bad document_type, or unsupported content type.",
+      description: "Bad document_type, or file content doesn't match declared mime type.",
       content: { "application/json": { schema: ErrorResponseSchema } },
     },
     404: { description: "No parcel with that id.", content: { "application/json": { schema: ErrorResponseSchema } } },
@@ -52,15 +55,14 @@ documentsRouter.post("/parcels/:id/documents", apiKeyAuth, upload.single("file")
   const { id } = ParcelIdParamSchema.parse(req.params);
   const { document_type } = AttachDocumentFieldsSchema.parse(req.body);
 
-  if (!req.file) {
-    throw new ApiError(400, "FILE_REQUIRED", "A 'file' field with the document is required.");
-  }
+  // Swagger "send empty value" may omit the part or send a 0-byte upload.
+  const file = req.file && req.file.size > 0 ? req.file : undefined;
 
-  if (!matchesDeclaredMimeType(req.file.buffer, req.file.mimetype)) {
+  if (file && !matchesDeclaredMimeType(file.buffer, file.mimetype)) {
     throw new ApiError(
       400,
       "UNSUPPORTED_MEDIA_TYPE",
-      `File content doesn't match declared type '${req.file.mimetype}'.`,
+      `File content doesn't match declared type '${file.mimetype}'.`,
     );
   }
 
@@ -68,25 +70,34 @@ documentsRouter.post("/parcels/:id/documents", apiKeyAuth, upload.single("file")
     throw new ApiError(404, "PARCEL_NOT_FOUND", `No parcel with id '${id}'.`);
   }
 
-  const extension = MIME_TYPE_EXTENSIONS[req.file.mimetype as keyof typeof MIME_TYPE_EXTENSIONS] ?? "";
-  // Generated server-side, never derived from the client-supplied file
-  // name — that name is only ever stored as a display string, never used
-  // to build a filesystem path (path traversal / collision prevention).
-  const storagePath = path.join(env.UPLOAD_DIR, id, `${randomUUID()}${extension}`);
-  await mkdir(path.dirname(storagePath), { recursive: true });
-  await writeFile(storagePath, req.file.buffer);
+  let storagePath: string | null = null;
+  if (file) {
+    const extension = MIME_TYPE_EXTENSIONS[file.mimetype as keyof typeof MIME_TYPE_EXTENSIONS] ?? "";
+    // Generated server-side, never derived from the client-supplied file
+    // name — that name is only ever stored as a display string, never used
+    // to build a filesystem path (path traversal / collision prevention).
+    storagePath = path.join(env.UPLOAD_DIR, id, `${randomUUID()}${extension}`);
+    await mkdir(path.dirname(storagePath), { recursive: true });
+    await writeFile(storagePath, file.buffer);
+  }
 
   const document = await createDocument({
     parcelId: id,
     documentType: document_type,
-    originalFileName: req.file.originalname,
-    contentType: req.file.mimetype,
-    sizeBytes: req.file.size,
+    originalFileName: file?.originalname ?? "",
+    contentType: file?.mimetype ?? "application/octet-stream",
+    sizeBytes: file?.size ?? 0,
     storagePath,
   });
 
   req.log.info(
-    { parcelId: id, documentId: document.id, documentType: document_type, sizeBytes: document.size_bytes },
+    {
+      parcelId: id,
+      documentId: document.id,
+      documentType: document_type,
+      sizeBytes: document.size_bytes,
+      metadataOnly: storagePath === null,
+    },
     "document attached",
   );
 

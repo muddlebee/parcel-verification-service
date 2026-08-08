@@ -13,7 +13,8 @@ export interface CreateDocumentInput {
   originalFileName: string;
   contentType: string;
   sizeBytes: number;
-  storagePath: string;
+  /** Null when recording metadata only (no file bytes written to disk). */
+  storagePath: string | null;
 }
 
 export async function createDocument(input: CreateDocumentInput): Promise<Selectable<DocumentsTable>> {
