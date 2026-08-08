@@ -29,11 +29,16 @@ curl -H "X-API-Key: dev-local-api-key" http://localhost:3000/api/v1/parcels
 
 ```bash
 npm install
-docker compose up -d postgres redis
-cp .env.example .env
-npm run migrate:up
-npm run dev
+cp .env.example .env   # once
+npm run start:local    # postgres + redis + migrations + src/index.ts
+# or, with file watching:
+npm run dev:local
+
+# later, stop deps (Ctrl+C the app first if it's still running):
+npm run stop:local
 ```
+
+`start:local` / `dev:local` start Postgres + Redis, **poll until both are healthy** (fail fast on port conflicts / stuck containers), run migrations, then start the app. `stop:local` (alias `docker:down`) stops those containers; data volumes are kept. Production `npm start` still runs the built `dist/index.js` only.
 
 **Tests** (need Postgres/Redis up — runs against the real thing, not mocks):
 
