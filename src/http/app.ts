@@ -54,15 +54,14 @@ export function buildApp() {
     }),
   );
 
-  // callbackRouter MUST be mounted before the authenticated routers.
-  // Express applies a router's own `router.use(middleware)` to every
-  // request forwarded into it by app.use(prefix, router) — not just
-  // requests matching that router's own routes. parcelsRouter's blanket
-  // apiKeyAuth would otherwise intercept /api/v1/callbacks/registry too
-  // (it's also under /api/v1) and 401 it before Express ever tries
-  // callbackRouter. callbackRouter itself has no such blanket middleware,
-  // so it correctly falls through via next() for paths it doesn't own —
-  // mounting order only matters in this one direction.
+  // apiKeyAuth is attached per-route rather than via router.use(), because
+  // Express runs a router's own `use()` middleware for every request
+  // forwarded into it by app.use(prefix, router) — not just the paths that
+  // router actually owns. A blanket apiKeyAuth on any one of these would
+  // 401 every unmatched /api/v1/* path (including the deliberately
+  // unauthenticated registry callback, and any genuine 404) before Express
+  // could try the next router. Per-route attachment makes these mounts
+  // order-independent.
   app.use("/api/v1", callbackRouter);
   app.use("/api/v1", parcelsRouter);
   app.use("/api/v1", documentsRouter);

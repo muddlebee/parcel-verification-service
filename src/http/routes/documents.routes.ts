@@ -20,7 +20,6 @@ import { toDocument } from "../mappers/parcel.mapper.js";
 import { env } from "../../config/env.js";
 
 export const documentsRouter = Router();
-documentsRouter.use(apiKeyAuth);
 
 const AttachDocumentMultipartSchema = z.object({
   file: z.any().openapi({ type: "string", format: "binary" }),
@@ -49,7 +48,7 @@ registry.registerPath({
 // Not restricted to a particular parcel status — ops may attach a document
 // supporting a dispute after a parcel is already verified, for example.
 // Attaching a document is not itself a state-machine transition.
-documentsRouter.post("/parcels/:id/documents", upload.single("file"), async (req, res) => {
+documentsRouter.post("/parcels/:id/documents", apiKeyAuth, upload.single("file"), async (req, res) => {
   const { id } = ParcelIdParamSchema.parse(req.params);
   const { document_type } = AttachDocumentFieldsSchema.parse(req.body);
 

@@ -14,7 +14,6 @@ import { createParcel, getParcelDetail, listParcels } from "../../db/repositorie
 import { toParcelDetail, toParcelSummary } from "../mappers/parcel.mapper.js";
 
 export const parcelsRouter = Router();
-parcelsRouter.use(apiKeyAuth);
 
 registry.registerPath({
   method: "post",
@@ -34,7 +33,7 @@ registry.registerPath({
     401: { description: "Missing/invalid API key.", content: { "application/json": { schema: ErrorResponseSchema } } },
   },
 });
-parcelsRouter.post("/parcels", async (req, res) => {
+parcelsRouter.post("/parcels", apiKeyAuth, async (req, res) => {
   const input = SubmitParcelRequestSchema.parse(req.body);
   const { id } = await createParcel(input);
   req.log.info({ parcelId: id, khataNo: input.parcel.khata_no, district: input.parcel.district }, "parcel submitted");
@@ -53,7 +52,7 @@ registry.registerPath({
     404: { description: "No parcel with that id.", content: { "application/json": { schema: ErrorResponseSchema } } },
   },
 });
-parcelsRouter.get("/parcels/:id", async (req, res) => {
+parcelsRouter.get("/parcels/:id", apiKeyAuth, async (req, res) => {
   const { id } = ParcelIdParamSchema.parse(req.params);
   const result = await getParcelDetail(id);
   if (!result) {
@@ -73,7 +72,7 @@ registry.registerPath({
     200: { description: "OK.", content: { "application/json": { schema: ListParcelsResponseSchema } } },
   },
 });
-parcelsRouter.get("/parcels", async (req, res) => {
+parcelsRouter.get("/parcels", apiKeyAuth, async (req, res) => {
   const query = ListParcelsQuerySchema.parse(req.query);
   const { rows, total } = await listParcels(query);
   res.status(200).json({

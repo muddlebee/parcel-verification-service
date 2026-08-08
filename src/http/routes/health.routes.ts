@@ -20,6 +20,11 @@ registry.registerPath({
   path: "/healthz",
   tags: ["Health"],
   summary: "Liveness/readiness probe for a container orchestrator.",
+  // Overrides the document-level `/api/v1` server. The probe is mounted at
+  // the app root on purpose — an orchestrator's healthcheck shouldn't have to
+  // track API versions — so without this Swagger UI would resolve it to
+  // /api/v1/healthz, which isn't a real route.
+  servers: [{ url: "/" }],
   responses: {
     200: {
       description: "Service is up and can reach Postgres and Redis.",

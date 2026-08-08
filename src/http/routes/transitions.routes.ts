@@ -11,7 +11,6 @@ import { getParcelDetail } from "../../db/repositories/parcels.repository.js";
 import { toParcelDetail } from "../mappers/parcel.mapper.js";
 
 export const transitionsRouter = Router();
-transitionsRouter.use(apiKeyAuth);
 
 registry.registerPath({
   method: "post",
@@ -37,7 +36,7 @@ registry.registerPath({
 // the real guard. Only verified->disputed and disputed->verified are ever
 // reachable this way, since every other edge is system/callback-driven;
 // anything else 409s regardless of what's requested here.
-transitionsRouter.post("/parcels/:id/transitions", async (req, res) => {
+transitionsRouter.post("/parcels/:id/transitions", apiKeyAuth, async (req, res) => {
   const { id } = ParcelIdParamSchema.parse(req.params);
   const { to, actor, reason } = ManualTransitionRequestSchema.parse(req.body);
 

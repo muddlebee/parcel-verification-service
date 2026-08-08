@@ -12,7 +12,6 @@ import { pickRandomScenario } from "../../registry/stubPartnerClient.js";
 import { env } from "../../config/env.js";
 
 export const verifyRouter = Router();
-verifyRouter.use(apiKeyAuth);
 
 registry.registerPath({
   method: "post",
@@ -36,7 +35,7 @@ registry.registerPath({
     },
   },
 });
-verifyRouter.post("/parcels/:id/verify", async (req, res) => {
+verifyRouter.post("/parcels/:id/verify", apiKeyAuth, async (req, res) => {
   const { id } = ParcelIdParamSchema.parse(req.params);
   const { scenario } = VerifyParcelRequestSchema.parse(req.body ?? {});
 
