@@ -158,5 +158,4 @@ Built with **Claude Code** (Sonnet 5) — architecture discussion, all code,
 migrations, tests, docs. I directed the architecture calls (Redis's role,
 Kysely over an ORM, the two-job stub design, the state-machine resolution)
 and reviewed/tested every commit; nothing here is unreviewed output.
-\
-parcels here." A canonical lookup beats client-side validation for this.
+
