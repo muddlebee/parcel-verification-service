@@ -6,6 +6,8 @@ record of every state change.
 
 Diagrams: [`docs/architecture.md`](docs/architecture.md). Worker concurrency
 scenario: [`docs/worker-concurrency.md`](docs/worker-concurrency.md).
+Production and backend interview notes:
+[`docs/backend-interview-guide.md`](docs/backend-interview-guide.md).
 Commit-by-commit build narrative: [`docs/IMPLEMENTATION_LOG.md`](docs/IMPLEMENTATION_LOG.md).
 Static Swagger docs (no backend behind it, just for browsing):
 **https://docs-site-eta-ten.vercel.app**.
@@ -158,4 +160,3 @@ Built with **Claude Code** (Sonnet 5) — architecture discussion, all code,
 migrations, tests, docs. I directed the architecture calls (Redis's role,
 Kysely over an ORM, the two-job stub design, the state-machine resolution)
 and reviewed/tested every commit; nothing here is unreviewed output.
-
